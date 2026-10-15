@@ -17,7 +17,7 @@ db = client['movie_website']
 
 movies_col = db['movies']
 settings_col = db['settings']
-options_col = db['options'] # For Badge, Quality, Language, Category
+options_col = db['options']
 
 # Initialize default settings and admin credentials
 if not settings_col.find_one({"type": "general"}):
@@ -62,16 +62,13 @@ FRONTEND_HTML = """
         .navbar { background-color: #151b2b; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .search-bar { max-width: 400px; width: 100%; }
         
-        /* Grid setup for Posters (2 on Mobile, 4 on Desktop) */
         .movie-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; padding: 20px 0; }
         @media (min-width: 768px) { .movie-grid { grid-template-columns: repeat(4, 1fr); } }
         
-        /* Movie Card Dooplay Style */
         .movie-card { background: #1e2738; border-radius: 8px; overflow: hidden; position: relative; transition: transform 0.3s ease, box-shadow 0.3s ease; border: 1px solid #2d3748; }
         .movie-card:hover { transform: scale(1.03); box-shadow: 0 8px 15px rgba(0,123,255,0.3); }
         .movie-poster { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
         
-        /* Badges */
         .movie-badge { position: absolute; top: 10px; right: 10px; background: #e50914; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.5); z-index: 2;}
         .movie-quality { position: absolute; top: 10px; left: 10px; background: #007bff; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.5); z-index: 2;}
         .movie-views { position: absolute; bottom: 65px; left: 10px; background: rgba(0,0,0,0.7); color: #fff; padding: 2px 8px; font-size: 11px; border-radius: 4px; z-index: 2; }
@@ -79,7 +76,6 @@ FRONTEND_HTML = """
         .movie-info { padding: 12px; text-align: center; }
         .movie-title { font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e2e8f0; }
         
-        /* Horizontal Scrollable Buttons */
         .btn-horizontal-scroll { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 12px; white-space: nowrap; align-items: center; }
         .btn-horizontal-scroll::-webkit-scrollbar { height: 8px; }
         .btn-horizontal-scroll::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
@@ -87,7 +83,6 @@ FRONTEND_HTML = """
         .custom-dl-btn { min-width: 140px; text-align: center; font-weight: bold; border-radius: 25px; transition: 0.3s; }
         .custom-dl-btn:hover { transform: translateY(-2px); }
 
-        /* Floating Telegram */
         .telegram-float { position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; background-color: #0088cc; color: #FFF; border-radius: 50%; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; font-size: 30px; text-decoration: none; transition: 0.3s;}
         .telegram-float:hover { transform: scale(1.1); background-color: #0077b3; color: white; }
         
@@ -96,7 +91,6 @@ FRONTEND_HTML = """
         .accordion-body { background-color: #0b0f19; border: 1px solid #1e2738; }
         .ep-box { background: #151b2b; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #007bff; }
         
-        /* Categories Menu */
         .cat-scroll { display: flex; overflow-x: auto; gap: 10px; padding: 10px 0; }
         .cat-scroll::-webkit-scrollbar { display: none; }
         .cat-badge { background: #1e2738; color: #fff; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-size: 13px; border: 1px solid #2d3748;}
@@ -104,7 +98,6 @@ FRONTEND_HTML = """
     </style>
 </head>
 <body>
-    <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
             <a class="navbar-brand fw-bold" href="/"><i class="fas fa-play text-primary"></i> DooPlay</a>
@@ -125,18 +118,16 @@ FRONTEND_HTML = """
     
     {% set settings = db.settings.find_one({"type": "general"}) %}
     
-    <!-- Notice & Ad Code -->
     <div class="container mt-3">
         {% if settings.notice %}<div class="alert alert-info text-center shadow-sm" style="background:#1e2738; color:#fff; border:none;"><i class="fas fa-bell text-warning"></i> {{ settings.notice }}</div>{% endif %}
         {% if settings.ad_code %}<div class="text-center mb-3">{{ settings.ad_code | safe }}</div>{% endif %}
     </div>
 
-    <!-- Main Content -->
+    <!-- Error Fixed Here -->
     <div class="container">
-        {% block content %}{% endblock %}
+        <!-- CONTENT_BLOCK -->
     </div>
 
-    <!-- Telegram Pop-Up & Float -->
     {% if settings.telegram_link %}
         <a href="{{ settings.telegram_link }}" target="_blank" class="telegram-float"><i class="fab fa-telegram-plane"></i></a>
     {% endif %}
@@ -162,7 +153,6 @@ FRONTEND_HTML = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Popup Modal Logic
         {% if settings.popup_notice %}
         window.onload = () => {
             if(!sessionStorage.getItem('popupShown')) {
@@ -172,14 +162,13 @@ FRONTEND_HTML = """
         };
         {% endif %}
 
-        // Ad Direct Link Logic for Download Buttons
         const adStatus = "{{ settings.ad_status }}";
         const directLink = "{{ settings.direct_link }}";
         function checkAd(event, url) {
             if(adStatus === 'on' && directLink) {
                 event.preventDefault();
-                window.open(directLink, '_blank'); // Open Ad
-                setTimeout(() => { window.location.href = url; }, 1000); // Redirect to Download
+                window.open(directLink, '_blank');
+                setTimeout(() => { window.location.href = url; }, 1000);
             }
         }
     </script>
@@ -213,7 +202,6 @@ ADMIN_HTML = """
 <body>
     <div class="container-fluid">
         <div class="row">
-            <!-- Desktop Sidebar -->
             <div class="col-md-2 sidebar d-none d-md-block">
                 <h4 class="text-center text-white mb-4 fw-bold"><i class="fas fa-play text-primary"></i> Admin Pro</h4>
                 <a href="/admin"><i class="fas fa-tachometer-alt me-2"></i> ড্যাশবোর্ড</a>
@@ -225,7 +213,6 @@ ADMIN_HTML = """
                 <a href="/logout" class="text-danger mt-5"><i class="fas fa-sign-out-alt me-2"></i> লগআউট</a>
             </div>
             
-            <!-- Mobile Sidebar -->
             <div class="col-12 d-md-none bg-dark p-3 d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary">
                 <h5 class="m-0 fw-bold"><i class="fas fa-play text-primary"></i> Admin Pro</h5>
                 <select class="form-select w-50" onchange="location = this.value;">
@@ -248,12 +235,15 @@ ADMIN_HTML = """
                         </div>
                     {% endfor %}
                 {% endif %}
-                {% block content %}{% endblock %}
+                
+                <!-- Error Fixed Here -->
+                <!-- CONTENT_BLOCK -->
+                
             </div>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    {% block scripts %}{% endblock %}
+    <!-- SCRIPTS_BLOCK -->
 </body>
 </html>
 """
@@ -267,8 +257,7 @@ def home():
     movies = list(movies_col.find().sort('_id', -1).limit(40))
     categories = list(options_col.find({"type": "category"}))
     
-    html = FRONTEND_HTML.replace('{% block content %}', """
-    <!-- Category Scroller -->
+    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="cat-scroll mb-3">
         <a href="/" class="cat-badge bg-primary text-white">All</a>
         {% for c in categories %}
@@ -303,7 +292,7 @@ def home():
 def search():
     query = request.args.get('q', '')
     movies = list(movies_col.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
-    html = FRONTEND_HTML.replace('{% block content %}', """
+    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h4 class="mb-3 border-start border-primary border-4 ps-2">Search Results for: <span class="text-warning">{{ query }}</span></h4>
     <div class="movie-grid">
         {% for m in movies %}
@@ -326,7 +315,7 @@ def search():
 def category_filter(cat_name):
     movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
     categories = list(options_col.find({"type": "category"}))
-    html = FRONTEND_HTML.replace('{% block content %}', """
+    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="cat-scroll mb-3">
         <a href="/" class="cat-badge">All</a>
         {% for c in categories %}
@@ -344,16 +333,13 @@ def category_filter(cat_name):
     """)
     return render_template_string(html, movies=movies, cat_name=cat_name, categories=categories, db=db)
 
-
 @app.route('/movie/<id>')
 def movie_details(id):
-    # Update Views
     movies_col.update_one({"_id": ObjectId(id)}, {"$inc": {"views": 1}})
     movie = movies_col.find_one({"_id": ObjectId(id)})
     
-    html = FRONTEND_HTML.replace('{% block content %}', """
+    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="row mt-4">
-        <!-- Poster Side -->
         <div class="col-md-3 col-lg-3 text-center mb-4">
             <div class="position-relative d-inline-block w-100">
                 <img src="{{ m.poster }}" class="img-fluid rounded shadow-lg w-100 border border-secondary" alt="Poster" style="max-height: 450px; object-fit: cover;">
@@ -362,7 +348,6 @@ def movie_details(id):
             <div class="mt-3 text-muted"><i class="fas fa-eye text-primary"></i> Total Views: {{ m.views }}</div>
         </div>
         
-        <!-- Info & Links Side -->
         <div class="col-md-9 col-lg-9">
             <h1 class="fw-bold text-white mb-3">{{ m.title }}</h1>
             <div class="mb-3 d-flex flex-wrap gap-2">
@@ -482,7 +467,7 @@ def admin_dashboard():
     total_movies = movies_col.count_documents({"type": "Movie"})
     total_series = movies_col.count_documents({"type": {"$in": ["Series", "Drama"]}})
     total_views = sum([m.get('views', 0) for m in movies_col.find()])
-    html = ADMIN_HTML.replace('{% block content %}', """
+    html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">ড্যাশবোর্ড (Dashboard)</h2>
     <div class="row">
         <div class="col-md-4 mb-3">
@@ -504,7 +489,7 @@ def admin_dashboard():
             </div>
         </div>
     </div>
-    """)
+    """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_template_string(html, tm=total_movies, ts=total_series, tv=total_views)
 
 @app.route('/admin/settings', methods=['GET', 'POST'])
@@ -526,7 +511,7 @@ def admin_settings():
         return redirect(url_for('admin_settings'))
     
     s = settings_col.find_one({"type": "general"})
-    html = ADMIN_HTML.replace('{% block content %}', """
+    html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল</h2>
     <form method="POST" class="card p-4">
         <h5 class="text-warning border-bottom border-secondary pb-2"><i class="fas fa-shield-alt"></i> Security / API</h5>
@@ -557,7 +542,7 @@ def admin_settings():
         </div>
         <button type="submit" class="btn btn-primary fw-bold px-5">Save All Settings</button>
     </form>
-    """)
+    """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_template_string(html, s=s)
 
 @app.route('/admin/options', methods=['GET', 'POST'])
@@ -575,7 +560,7 @@ def admin_options():
     langs = list(options_col.find({"type": "language"}))
     cats = list(options_col.find({"type": "category"}))
     
-    html = ADMIN_HTML.replace('{% block content %}', """
+    html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">ক্যাটাগরি, ব্যাজ, কোয়ালিটি ও ভাষা</h2>
     <div class="card p-4">
         <form method="POST" class="d-flex gap-2 mb-4">
@@ -616,7 +601,7 @@ def admin_options():
             </div>
         </div>
     </div>
-    """)
+    """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats)
 
 @app.route('/admin/del_opt/<id>')
@@ -624,7 +609,6 @@ def admin_options():
 def del_opt(id):
     options_col.delete_one({"_id": ObjectId(id)})
     return redirect(url_for('admin_options'))
-
 
 @app.route('/admin/add_movie', methods=['GET', 'POST'])
 @login_required
@@ -634,7 +618,6 @@ def add_movie():
     if request.method == 'POST':
         action = request.form.get('action')
         
-        # ---------------- AUTO TMDB IMPORT ----------------
         if action == 'fetch_tmdb':
             tmdb_id = request.form.get('tmdb_id')
             m_type = request.form.get('fetch_type')
@@ -655,9 +638,7 @@ def add_movie():
                 poster = f"https://image.tmdb.org/t/p/w500{res.get('poster_path')}" if res.get('poster_path') else ""
                 desc = res.get('overview', '')
                 
-                # Fetch Categories/Genres
                 genres = [g['name'] for g in res.get('genres', [])]
-                # Auto add missing categories to options db
                 for g in genres:
                     if not options_col.find_one({"type": "category", "value": g}):
                         options_col.insert_one({"type": "category", "value": g})
@@ -670,7 +651,6 @@ def add_movie():
                     "links": []
                 }
                 
-                # Series Auto Seasons & Episodes
                 if m_type == 'tv':
                     seasons = []
                     for s in res.get('seasons', []):
@@ -687,12 +667,10 @@ def add_movie():
                 flash(f"Error connecting to TMDB: {str(e)}")
                 return redirect(url_for('add_movie'))
 
-        # ---------------- MANUAL ADD ----------------
         elif action == 'manual_add':
             title = request.form.get('title')
             m_type = request.form.get('type')
             
-            # Generate links
             link_names = request.form.getlist('link_name[]')
             link_urls = request.form.getlist('link_url[]')
             links = [{"name": n, "url": u} for n, u in zip(link_names, link_urls) if n and u]
@@ -718,10 +696,9 @@ def add_movie():
     langs = list(options_col.find({"type": "language"}))
     cats = list(options_col.find({"type": "category"}))
 
-    html = ADMIN_HTML.replace('{% block content %}', """
+    html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">মুভি / সিরিজ / ড্রামা এড</h2>
     
-    <!-- Auto TMDB Add -->
     <div class="card p-4 mb-4 border-info shadow">
         <h4 class="text-info fw-bold mb-3"><i class="fas fa-magic"></i> ১ ক্লিকে Auto TMDB Import</h4>
         <form method="POST" class="row align-items-end">
@@ -743,7 +720,6 @@ def add_movie():
         </form>
     </div>
 
-    <!-- Manual Add -->
     <div class="card p-4 shadow">
         <h4 class="text-warning fw-bold mb-3"><i class="fas fa-edit"></i> Manual Publish</h4>
         <form method="POST">
@@ -786,7 +762,7 @@ def add_movie():
             <button type="submit" class="btn btn-primary w-100 mt-4 fw-bold fs-5">Publish Manual Post</button>
         </form>
     </div>
-    """).replace('{% block scripts %}', """
+    """).replace('<!-- SCRIPTS_BLOCK -->', """
     <script>
         function addLinkField(containerId, nameAttr, urlAttr) {
             let div = document.createElement('div');
@@ -839,7 +815,7 @@ def edit_movie(id):
     langs = list(options_col.find({"type": "language"}))
     cats = list(options_col.find({"type": "category"}))
 
-    html = ADMIN_HTML.replace('{% block content %}', """
+    html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-warning border-4 ps-2 mb-4">Edit: <span class="text-primary">{{ m.title }}</span></h2>
     <div class="card p-4">
         <form method="POST">
@@ -914,7 +890,7 @@ def edit_movie(id):
             <button type="submit" class="btn btn-primary w-100 fw-bold fs-5 mt-4">Save All Changes</button>
         </form>
     </div>
-    """).replace('{% block scripts %}', """
+    """).replace('<!-- SCRIPTS_BLOCK -->', """
     <script>
         function addLinkField(containerId, nameAttr, urlAttr) {
             let div = document.createElement('div');
@@ -928,12 +904,11 @@ def edit_movie(id):
     """)
     return render_template_string(html, m=movie, badges=badges, qualities=qualities, langs=langs, cats=cats)
 
-
 @app.route('/admin/all_movies')
 @login_required
 def all_movies():
     movies = list(movies_col.find().sort('_id', -1))
-    html = ADMIN_HTML.replace('{% block content %}', """
+    html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">লিস্ট ও ডিলেট ম্যানেজমেন্ট</h2>
     <div class="card p-4 shadow">
         <div class="d-flex flex-wrap justify-content-between mb-3 gap-2">
@@ -973,7 +948,7 @@ def all_movies():
             <button class="btn btn-danger fw-bold" onclick="deleteSelected()"><i class="fas fa-trash"></i> Delete Selected (Bottom)</button>
         </div>
     </div>
-    """).replace('{% block scripts %}', """
+    """).replace('<!-- SCRIPTS_BLOCK -->', """
     <script>
         function filterTable() {
             let input = document.getElementById("searchInput").value.toLowerCase();
@@ -1010,9 +985,6 @@ def delete_multiple():
     return jsonify({"status": "success"})
 
 
-# ==========================================
-# RUN APP
-# ==========================================
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
