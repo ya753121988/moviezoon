@@ -87,18 +87,10 @@ FRONTEND_HTML = """
         .movie-title { font-size: 14px; font-weight: 600; color: #e2e8f0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; margin-bottom: 6px; }
         .movie-meta { font-size: 11px; color: #8c98a4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; }
         
-        .btn-horizontal-scroll { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 12px; white-space: nowrap; align-items: stretch; }
-        .btn-horizontal-scroll::-webkit-scrollbar { height: 8px; }
-        .btn-horizontal-scroll::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
-        .btn-horizontal-scroll::-webkit-scrollbar-track { background: #151b2b; }
-        
-        .episodes-grid { display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; padding-right: 5px; padding-bottom: 12px; }
-        .episodes-grid::-webkit-scrollbar { width: 6px; }
-        .episodes-grid::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
-        .episodes-grid::-webkit-scrollbar-track { background: #151b2b; }
+        .episodes-grid { display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; overflow-x: hidden; padding-right: 5px; padding-bottom: 12px; scrollbar-width: thin; }
         .ep-box { background: #151b2b; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; width: 100%; display: flex; flex-direction: column; justify-content: start; border: 1px solid #1e2738; }
         
-        .nav-pills .nav-link { background: #1e2738; color: #fff; margin-right: 10px; border: 1px solid #2d3748; padding: 8px 20px; }
+        .nav-pills .nav-link { background: #1e2738; color: #fff; border: 1px solid #2d3748; padding: 8px 20px; }
         .nav-pills .nav-link.active { background: #007bff; color: #fff; border-color: #007bff; box-shadow: 0 4px 6px rgba(0,123,255,0.3); }
 
         .cat-scroll { display: flex; overflow-x: auto; gap: 10px; padding: 10px 0; }
@@ -119,8 +111,13 @@ FRONTEND_HTML = """
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse order-4" id="navMenu" style="flex-grow: 0;">
-                <ul class="navbar-nav ms-auto mt-3 mt-lg-0">
-                    <li class="nav-item"><a class="nav-link text-white" href="/admin"><i class="fas fa-user-shield text-warning"></i> Admin</a></li>
+                <ul class="navbar-nav ms-auto mt-3 mt-lg-0" style="max-height: 350px; overflow-y: auto; overflow-x: hidden;">
+                    <!-- Auto Categories in 3-dot menu -->
+                    {% set nav_cats = db.options.find({"type": "category"}) %}
+                    <li class="nav-item"><a class="nav-link text-white fw-bold" href="/"><i class="fas fa-home text-primary"></i> Home</a></li>
+                    {% for c in nav_cats %}
+                    <li class="nav-item"><a class="nav-link text-white" href="/category/{{ c.value }}"><i class="fas fa-tags text-warning"></i> {{ c.value }}</a></li>
+                    {% endfor %}
                 </ul>
             </div>
         </div>
@@ -403,35 +400,51 @@ def movie_details(id):
             
             {% if m.type == 'Movie' %}
                 <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Download & Watch Links</h4>
-                <div class="btn-horizontal-scroll">
+                
+                <div class="d-flex flex-column gap-3"> <!-- Grouped and Vertically Stacked Links -->
                     {% if m.links %}
-                        {% for link in m.links %}
-                        <a href="{{ link.url }}" onclick="checkAd(event, '{{ link.url }}')" class="btn btn-outline-info custom-dl-btn p-2 d-flex flex-column align-items-center justify-content-center">
-                            <span class="fw-bold mb-1">
-                                {% if 'online' in link.name.lower() or 'watch' in link.name.lower() %}<i class="fas fa-play-circle"></i>
-                                {% elif 'telegram' in link.name.lower() %}<i class="fab fa-telegram"></i>
-                                {% else %}<i class="fas fa-download"></i>{% endif %}
-                                {{ link.name }}
-                            </span>
-                            {% if link.quality %}<span class="badge bg-primary" style="font-size: 0.70rem;">{{ link.quality }}</span>{% endif %}
-                        </a>
+                        {% for group_name, items in m.links|groupby('name') %}
+                        <div class="link-group border border-secondary rounded bg-dark p-2">
+                            <button class="btn btn-outline-warning w-100 fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#col_movie_{{ loop.index }}">
+                                <span class="fs-5">
+                                    {% if 'online' in group_name.lower() or 'watch' in group_name.lower() %}<i class="fas fa-play-circle"></i>
+                                    {% elif 'telegram' in group_name.lower() %}<i class="fab fa-telegram"></i>
+                                    {% else %}<i class="fas fa-download"></i>{% endif %}
+                                    {{ group_name }}
+                                </span>
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+                            <div class="collapse mt-2" id="col_movie_{{ loop.index }}">
+                                <div class="d-flex flex-column gap-2">
+                                    {% for item in items %}
+                                    <a href="{{ item.url }}" onclick="checkAd(event, '{{ item.url }}')" class="btn btn-primary w-100 d-flex justify-content-between align-items-center p-2 shadow-sm">
+                                        <span><i class="fas fa-link"></i> Click to Open</span>
+                                        {% if item.quality %}<span class="badge bg-light text-dark px-2 py-1 fs-6">{{ item.quality }}</span>{% endif %}
+                                    </a>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
                         {% endfor %}
                     {% else %}
-                        <div class="alert alert-secondary w-100">No links available yet.</div>
+                        <div class="alert alert-secondary w-100 text-center">No links available yet.</div>
                     {% endif %}
                 </div>
             {% else %}
                 <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Seasons & Episodes</h4>
                 
-                <ul class="nav nav-pills flex-nowrap overflow-auto mb-3 pb-2" id="seasonTabs" role="tablist" style="scrollbar-width: thin;">
-                    {% for s in m.seasons %}
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link {% if loop.first %}active{% endif %} fw-bold rounded-pill" data-bs-toggle="pill" data-bs-target="#season_{{ s.season }}" type="button" role="tab" style="white-space: nowrap;">
-                            <i class="fas fa-folder-open me-1"></i> Season {{ s.season }}
-                        </button>
-                    </li>
-                    {% endfor %}
-                </ul>
+                <!-- Vertical Scroll for Seasons -->
+                <div class="p-2 border border-secondary rounded mb-3" style="background:#151b2b; max-height: 250px; overflow-y: auto; scrollbar-width: thin;">
+                    <ul class="nav nav-pills flex-column gap-2" id="seasonTabs" role="tablist">
+                        {% for s in m.seasons %}
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link w-100 text-start {% if loop.first %}active{% endif %} fw-bold rounded" data-bs-toggle="pill" data-bs-target="#season_{{ s.season }}" type="button" role="tab">
+                                <i class="fas fa-folder-open me-2"></i> Season {{ s.season }}
+                            </button>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
 
                 <div class="tab-content" id="seasonTabsContent">
                     {% for s in m.seasons %}
@@ -442,21 +455,37 @@ def movie_details(id):
                             {% for ep in s.episodes %}
                                 <div class="ep-box">
                                     <button class="btn btn-outline-primary btn-sm w-100 text-start fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
-                                        <span><i class="fas fa-tv me-1"></i> Episode {{ ep.episode }}</span> 
+                                        <span class="fs-6"><i class="fas fa-tv me-1"></i> Episode {{ ep.episode }}</span> 
                                         <i class="fas fa-chevron-down"></i>
                                     </button>
                                     
                                     <div id="links_S{{s.season}}_E{{ep.episode}}" class="collapse mt-2">
                                         <div class="d-flex flex-column gap-2">
                                             {% if ep.links %}
-                                                {% for link in ep.links %}
-                                                <a href="{{ link.url }}" onclick="checkAd(event, '{{ link.url }}')" class="btn btn-primary btn-sm text-truncate w-100 d-flex justify-content-between align-items-center">
-                                                    <span><i class="fas fa-download"></i> {{ link.name }}</span>
-                                                    {% if link.quality %}<span class="badge bg-dark ms-1" style="font-size:0.70rem;">{{ link.quality }}</span>{% endif %}
-                                                </a>
+                                                {% for group_name, items in ep.links|groupby('name') %}
+                                                <div class="border border-secondary rounded p-2" style="background: rgba(0,0,0,0.3);">
+                                                    <button class="btn btn-sm btn-outline-warning w-100 fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#col_s{{s.season}}_e{{ep.episode}}_g{{loop.index}}">
+                                                        <span>
+                                                            {% if 'online' in group_name.lower() or 'watch' in group_name.lower() %}<i class="fas fa-play-circle"></i>
+                                                            {% else %}<i class="fas fa-download"></i>{% endif %}
+                                                            {{ group_name }}
+                                                        </span>
+                                                        <i class="fas fa-chevron-down"></i>
+                                                    </button>
+                                                    <div class="collapse mt-2" id="col_s{{s.season}}_e{{ep.episode}}_g{{loop.index}}">
+                                                        <div class="d-flex flex-column gap-2">
+                                                            {% for item in items %}
+                                                            <a href="{{ item.url }}" onclick="checkAd(event, '{{ item.url }}')" class="btn btn-sm btn-primary w-100 d-flex justify-content-between align-items-center">
+                                                                <span><i class="fas fa-link"></i> Click to Open</span>
+                                                                {% if item.quality %}<span class="badge bg-light text-dark">{{ item.quality }}</span>{% endif %}
+                                                            </a>
+                                                            {% endfor %}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 {% endfor %}
                                             {% else %}
-                                                <span class="text-muted small text-center w-100 d-block border border-secondary rounded p-1">No links available</span>
+                                                <span class="text-muted small text-center w-100 d-block border border-secondary rounded p-2">No links available</span>
                                             {% endif %}
                                         </div>
                                     </div>
