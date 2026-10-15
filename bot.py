@@ -4,6 +4,7 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 import requests
 import os
+import json
 
 app = Flask(__name__)
 app.secret_key = "dooplay_ultra_pro_max_secret"
@@ -23,9 +24,13 @@ options_col = db['options']
 if not settings_col.find_one({"type": "general"}):
     settings_col.insert_one({
         "type": "general",
-        "ad_status": "off",
-        "ad_code": "",
-        "direct_link": "",
+        "ad_status_banner": "off",
+        "ad_status_direct": "off",
+        "ad_banner_home_desktop": "",
+        "ad_banner_home_mobile": "",
+        "ad_banner_detail_desktop": "",
+        "ad_banner_detail_mobile": "",
+        "direct_links": [],
         "notice": "Welcome to our Premium Movie Site!",
         "popup_notice": "Join our Telegram Group!",
         "telegram_link": "https://t.me/yourchannel",
@@ -68,20 +73,16 @@ FRONTEND_HTML = """
         @media (min-width: 768px) { .movie-grid { grid-template-columns: repeat(4, 1fr); gap: 15px; } }
         @media (min-width: 992px) { .movie-grid { grid-template-columns: repeat(5, 1fr); } }
         
-        /* Card styling without hover zoom */
         .movie-card { background: #1e2738; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; height: 100%; border: 1px solid #2d3748; transition: box-shadow 0.3s ease; }
         .movie-card:hover { box-shadow: 0 8px 15px rgba(0,123,255,0.3); }
         
-        /* Poster wrapper to keep aspects and position badges safely */
         .poster-wrapper { position: relative; width: 100%; aspect-ratio: 2/3; overflow: hidden; border-bottom: 1px solid #2d3748; }
         .movie-poster { width: 100%; height: 100%; object-fit: cover; }
         
-        /* Badges positioned perfectly INSIDE the poster area */
         .movie-badge { position: absolute; top: 8px; right: 8px; background: #e50914; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
         .movie-quality { position: absolute; top: 8px; left: 8px; background: #007bff; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
         .movie-views { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.85); color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; z-index: 2; border: 1px solid #333; }
         
-        /* Information block BELOW the poster */
         .movie-info { padding: 10px 8px; text-align: center; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; background: #1e2738; }
         .movie-title { font-size: 14px; font-weight: 600; color: #e2e8f0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; margin-bottom: 6px; }
         .movie-meta { font-size: 11px; color: #8c98a4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; }
@@ -128,8 +129,22 @@ FRONTEND_HTML = """
     {% set settings = db.settings.find_one({"type": "general"}) %}
     
     <div class="container mt-3">
-        {% if settings.notice %}<div class="alert alert-info text-center shadow-sm" style="background:#1e2738; color:#fff; border:none;"><i class="fas fa-bell text-warning"></i> {{ settings.notice }}</div>{% endif %}
-        {% if settings.ad_code %}<div class="text-center mb-3">{{ settings.ad_code | safe }}</div>{% endif %}
+        {% if settings.get('notice') %}
+            <div class="alert alert-info text-center shadow-sm" style="background:#1e2738; color:#fff; border:none;">
+                <i class="fas fa-bell text-warning"></i> {{ settings.get('notice') }}
+            </div>
+        {% endif %}
+        
+        <!-- BANNER ADS SYSTEM (Desktop & Mobile Specific) -->
+        {% if settings.get('ad_status_banner') == 'on' %}
+            {% if page_name in ['home', 'search', 'category'] %}
+                <div class="d-none d-md-block text-center mb-3 ad-box">{{ settings.get('ad_banner_home_desktop') | safe }}</div>
+                <div class="d-block d-md-none text-center mb-3 ad-box">{{ settings.get('ad_banner_home_mobile') | safe }}</div>
+            {% elif page_name == 'detail' %}
+                <div class="d-none d-md-block text-center mb-3 ad-box">{{ settings.get('ad_banner_detail_desktop') | safe }}</div>
+                <div class="d-block d-md-none text-center mb-3 ad-box">{{ settings.get('ad_banner_detail_mobile') | safe }}</div>
+            {% endif %}
+        {% endif %}
     </div>
 
     <div class="container">
@@ -137,15 +152,33 @@ FRONTEND_HTML = """
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- DIRECT LINKS AUTO-SWITCH JS SYSTEM -->
     <script>
-        const adStatus = "{{ settings.ad_status }}";
-        const directLink = "{{ settings.direct_link }}";
+        const adStatusDirect = "{{ settings.get('ad_status_direct', 'off') }}";
+        const rawLinks = '{{ settings.get("direct_links", []) | tojson | safe }}';
+        let directLinks = [];
+        try { directLinks = JSON.parse(rawLinks); } catch(e) {}
+        
+        let adClickIndex = parseInt(localStorage.getItem('dooplay_ad_index')) || 0;
+
         function checkAd(event, url) {
-            if(adStatus === 'on' && directLink) {
+            // Check if Direct Ads are ON and links exist
+            if(adStatusDirect === 'on' && directLinks.length > 0) {
                 event.preventDefault();
-                window.open(directLink, '_blank');
-                setTimeout(() => { window.location.href = url; }, 1000);
+                
+                // Get the current link and switch for next time
+                let clickUrl = directLinks[adClickIndex % directLinks.length];
+                adClickIndex++;
+                localStorage.setItem('dooplay_ad_index', adClickIndex);
+                
+                // Open the ad in a new tab
+                window.open(clickUrl, '_blank');
+                
+                // Redirect to actual movie/download in the current tab
+                setTimeout(() => { window.location.href = url; }, 500);
             }
+            // If Ads are OFF, it will just normally follow the href attribute automatically.
         }
     </script>
 </body>
@@ -267,7 +300,7 @@ def home():
         <div class="alert alert-secondary text-center mt-5">কোনো মুভি পাওয়া যায়নি!</div>
     {% endif %}
     """)
-    return render_template_string(html, movies=movies, categories=categories, db=db)
+    return render_template_string(html, movies=movies, categories=categories, db=db, page_name='home')
 
 @app.route('/search')
 def search():
@@ -299,7 +332,7 @@ def search():
     </div>
     {% if not movies %}<h5 class="text-center text-muted mt-5">No results found!</h5>{% endif %}
     """)
-    return render_template_string(html, movies=movies, query=query, db=db)
+    return render_template_string(html, movies=movies, query=query, db=db, page_name='search')
 
 @app.route('/category/<cat_name>')
 def category_filter(cat_name):
@@ -336,7 +369,7 @@ def category_filter(cat_name):
         {% endfor %}
     </div>
     """)
-    return render_template_string(html, movies=movies, cat_name=cat_name, categories=categories, db=db)
+    return render_template_string(html, movies=movies, cat_name=cat_name, categories=categories, db=db, page_name='category')
 
 @app.route('/movie/<id>')
 def movie_details(id):
@@ -438,7 +471,7 @@ def movie_details(id):
         </div>
     </div>
     """)
-    return render_template_string(html, m=movie, db=db)
+    return render_template_string(html, m=movie, db=db, page_name='detail')
 
 # ==========================================
 # ADMIN AUTHENTICATION
@@ -519,10 +552,19 @@ def admin_dashboard():
 @login_required
 def admin_settings():
     if request.method == 'POST':
+        # Handles unlimited direct links list
+        d_links = request.form.getlist('direct_links[]')
+        # Clean empty strings from list
+        d_links = [url for url in d_links if url.strip()]
+        
         settings_col.update_one({"type": "general"}, {"$set": {
-            "ad_status": request.form.get('ad_status'),
-            "direct_link": request.form.get('direct_link'),
-            "ad_code": request.form.get('ad_code'),
+            "ad_status_banner": request.form.get('ad_status_banner'),
+            "ad_status_direct": request.form.get('ad_status_direct'),
+            "ad_banner_home_desktop": request.form.get('ad_banner_home_desktop'),
+            "ad_banner_home_mobile": request.form.get('ad_banner_home_mobile'),
+            "ad_banner_detail_desktop": request.form.get('ad_banner_detail_desktop'),
+            "ad_banner_detail_mobile": request.form.get('ad_banner_detail_mobile'),
+            "direct_links": d_links,
             "telegram_link": request.form.get('telegram_link'),
             "notice": request.form.get('notice'),
             "popup_notice": request.form.get('popup_notice'),
@@ -530,42 +572,96 @@ def admin_settings():
             "admin_user": request.form.get('admin_user'),
             "admin_pass": request.form.get('admin_pass')
         }})
-        flash("সেটিংস সফলভাবে আপডেট হয়েছে!")
+        flash("সেটিংস এবং অ্যাডস সফলভাবে আপডেট হয়েছে!")
         return redirect(url_for('admin_settings'))
     
     s = settings_col.find_one({"type": "general"})
+    if not s:
+        s = {}
+        
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল</h2>
+    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল (Advanced)</h2>
     <form method="POST" class="card p-4">
-        <h5 class="text-warning border-bottom border-secondary pb-2"><i class="fas fa-shield-alt"></i> Security / API</h5>
-        <div class="row mb-4">
-            <div class="col-md-4 mb-2"><label>Admin Username</label><input type="text" name="admin_user" class="form-control" value="{{ s.admin_user }}" required></div>
-            <div class="col-md-4 mb-2"><label>Admin Password</label><input type="text" name="admin_pass" class="form-control" value="{{ s.admin_pass }}" required></div>
-            <div class="col-md-4 mb-2"><label>TMDB API Key V3</label><input type="text" name="tmdb_api_key" class="form-control" value="{{ s.tmdb_api_key }}" placeholder="Required for TMDB Import & Live Search"></div>
-        </div>
-
-        <h5 class="text-info border-bottom border-secondary pb-2"><i class="fas fa-ad"></i> Ads & Links</h5>
-        <div class="row mb-4">
-            <div class="col-md-4 mb-2">
-                <label>Direct Ad Link Status</label>
-                <select name="ad_status" class="form-select">
-                    <option value="on" {% if s.ad_status == 'on' %}selected{% endif %}>ON (চালু)</option>
-                    <option value="off" {% if s.ad_status == 'off' %}selected{% endif %}>OFF (বন্ধ)</option>
+        
+        <h5 class="text-info border-bottom border-secondary pb-2"><i class="fas fa-link"></i> Direct Ads (Auto Switch on Click)</h5>
+        <div class="row mb-4 bg-dark p-3 rounded">
+            <div class="col-md-12 mb-3">
+                <label class="text-warning fw-bold">Direct Ads Status</label>
+                <select name="ad_status_direct" class="form-select border-warning">
+                    <option value="on" {% if s.get('ad_status_direct') == 'on' %}selected{% endif %}>ON (চালু)</option>
+                    <option value="off" {% if s.get('ad_status_direct') == 'off' %}selected{% endif %}>OFF (বন্ধ)</option>
                 </select>
             </div>
-            <div class="col-md-8 mb-2"><label>Direct Ad Link URL</label><input type="text" name="direct_link" class="form-control" value="{{ s.direct_link }}"></div>
-            <div class="col-12 mb-2"><label>Banner Ad Code (HTML)</label><textarea name="ad_code" class="form-control" rows="3">{{ s.ad_code }}</textarea></div>
+            <div class="col-12">
+                <label class="mb-2 text-info">Add Unlimited Direct Links (প্রতি ক্লিকে অটো পরিবর্তন হবে)</label>
+                <div id="directLinkContainer">
+                    {% for d_link in s.get('direct_links', []) %}
+                    <div class="input-group mb-2">
+                        <span class="input-group-text bg-secondary text-white"><i class="fas fa-external-link-alt"></i></span>
+                        <input type="url" name="direct_links[]" class="form-control" value="{{ d_link }}" placeholder="https://ad-network.com/..." required>
+                        <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="button" class="btn btn-outline-info mt-2 btn-sm fw-bold" onclick="addDirectLink()"><i class="fas fa-plus"></i> Add Link</button>
+            </div>
         </div>
 
-        <h5 class="text-success border-bottom border-secondary pb-2"><i class="fas fa-bullhorn"></i> Notice & Telegram</h5>
-        <div class="row mb-4">
-            <div class="col-md-12 mb-2"><label>Telegram Link</label><input type="text" name="telegram_link" class="form-control" value="{{ s.telegram_link }}"></div>
-            <div class="col-md-6 mb-2"><label>General Notice (Top bar)</label><input type="text" name="notice" class="form-control" value="{{ s.notice }}"></div>
-            <div class="col-md-6 mb-2"><label>Popup Notice Modal</label><input type="text" name="popup_notice" class="form-control" value="{{ s.popup_notice }}"></div>
+        <h5 class="text-success border-bottom border-secondary pb-2"><i class="fas fa-image"></i> Banner Ads (HTML Code)</h5>
+        <div class="row mb-4 bg-dark p-3 rounded">
+            <div class="col-md-12 mb-3">
+                <label class="text-warning fw-bold">Banner Ads Status</label>
+                <select name="ad_status_banner" class="form-select border-warning">
+                    <option value="on" {% if s.get('ad_status_banner') == 'on' %}selected{% endif %}>ON (চালু)</option>
+                    <option value="off" {% if s.get('ad_status_banner') == 'off' %}selected{% endif %}>OFF (বন্ধ)</option>
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="text-white"><i class="fas fa-home"></i> Home Page (Desktop)</label>
+                <textarea name="ad_banner_home_desktop" class="form-control" rows="3" placeholder="Paste desktop banner code here">{{ s.get('ad_banner_home_desktop', '') }}</textarea>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="text-white"><i class="fas fa-mobile-alt"></i> Home Page (Mobile)</label>
+                <textarea name="ad_banner_home_mobile" class="form-control" rows="3" placeholder="Paste mobile banner code here">{{ s.get('ad_banner_home_mobile', '') }}</textarea>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="text-white"><i class="fas fa-film"></i> Detail Page (Desktop)</label>
+                <textarea name="ad_banner_detail_desktop" class="form-control" rows="3" placeholder="Paste desktop banner code here">{{ s.get('ad_banner_detail_desktop', '') }}</textarea>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="text-white"><i class="fas fa-mobile-alt"></i> Detail Page (Mobile)</label>
+                <textarea name="ad_banner_detail_mobile" class="form-control" rows="3" placeholder="Paste mobile banner code here">{{ s.get('ad_banner_detail_mobile', '') }}</textarea>
+            </div>
         </div>
-        <button type="submit" class="btn btn-primary fw-bold px-5">Save All Settings</button>
+
+        <h5 class="text-warning border-bottom border-secondary pb-2"><i class="fas fa-shield-alt"></i> Security / API</h5>
+        <div class="row mb-4">
+            <div class="col-md-4 mb-2"><label>Admin Username</label><input type="text" name="admin_user" class="form-control" value="{{ s.get('admin_user', 'admin') }}" required></div>
+            <div class="col-md-4 mb-2"><label>Admin Password</label><input type="text" name="admin_pass" class="form-control" value="{{ s.get('admin_pass', 'admin') }}" required></div>
+            <div class="col-md-4 mb-2"><label>TMDB API Key V3</label><input type="text" name="tmdb_api_key" class="form-control" value="{{ s.get('tmdb_api_key', '') }}" placeholder="Required for TMDB Import"></div>
+        </div>
+
+        <h5 class="text-primary border-bottom border-secondary pb-2"><i class="fas fa-bullhorn"></i> Notice & Telegram</h5>
+        <div class="row mb-4">
+            <div class="col-md-12 mb-2"><label>Telegram Link</label><input type="text" name="telegram_link" class="form-control" value="{{ s.get('telegram_link', '') }}"></div>
+            <div class="col-md-12 mb-2"><label>General Notice (Top bar)</label><input type="text" name="notice" class="form-control" value="{{ s.get('notice', '') }}"></div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary fw-bold px-5 fs-5 w-100">Save All Settings</button>
     </form>
-    """).replace('<!-- SCRIPTS_BLOCK -->', "")
+    """).replace('<!-- SCRIPTS_BLOCK -->', """
+    <script>
+        function addDirectLink() {
+            let div = document.createElement('div');
+            div.className = "input-group mb-2";
+            div.innerHTML = `
+                <span class="input-group-text bg-secondary text-white"><i class="fas fa-external-link-alt"></i></span>
+                <input type="url" name="direct_links[]" class="form-control" placeholder="https://ad-network.com/..." required>
+                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`;
+            document.getElementById('directLinkContainer').appendChild(div);
+        }
+    </script>
+    """)
     return render_template_string(html, s=s)
 
 @app.route('/admin/options', methods=['GET', 'POST'])
@@ -638,7 +734,12 @@ def admin_options():
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names)
 
-# NEW: LIVE SEARCH API ROUTE
+@app.route('/admin/del_opt/<id>')
+@login_required
+def del_opt(id):
+    options_col.delete_one({"_id": ObjectId(id)})
+    return redirect(url_for('admin_options'))
+
 @app.route('/admin/tmdb_search')
 @login_required
 def tmdb_search():
@@ -759,17 +860,14 @@ def add_movie():
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">মুভি / সিরিজ / ড্রামা এড</h2>
 
-    <!-- TMDB LIVE SEARCH SECTION (NEW FEATURE) -->
+    <!-- TMDB LIVE SEARCH SECTION -->
     <div class="card p-4 mb-4 border-success shadow" style="background:#151b2b;">
         <h4 class="text-success fw-bold mb-3"><i class="fas fa-search"></i> লাইভ TMDB সার্চ ও ইম্পোর্ট</h4>
         <div class="position-relative">
             <input type="text" id="liveSearchInput" class="form-control form-control-lg bg-dark text-white border-success" placeholder="মুভি বা সিরিজের নাম লিখুন...">
             <div id="liveSearchResults" class="list-group position-absolute w-100 shadow-lg" style="z-index: 1000; max-height: 400px; overflow-y: auto; display: none;">
-                <!-- Search results will appear here -->
             </div>
         </div>
-        
-        <!-- Hidden Form used to trigger backend import when a result is clicked -->
         <form id="hiddenImportForm" method="POST" style="display:none;">
             <input type="hidden" name="action" value="fetch_tmdb">
             <input type="hidden" name="tmdb_id" id="hidden_tmdb_id">
@@ -851,7 +949,6 @@ def add_movie():
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', """
     <script>
-        // JS for Add Links Field
         const linkNameOpts = `<option value="">Select Name...</option>{% for lnk in link_names %}<option value="{{ lnk.value }}">{{ lnk.value }}</option>{% endfor %}`;
         const qualOpts = `<option value="">Quality...</option>{% for q in qualities %}<option value="{{ q.value }}">{{ q.value }}</option>{% endfor %}`;
 
@@ -866,7 +963,6 @@ def add_movie():
             document.getElementById(containerId).appendChild(div);
         }
 
-        // JS for Live TMDB Search
         const searchInput = document.getElementById('liveSearchInput');
         const searchResults = document.getElementById('liveSearchResults');
         
@@ -911,7 +1007,6 @@ def add_movie():
             }, 500);
         });
         
-        // Hide search results if clicked outside
         document.addEventListener('click', function(e) {
             if(e.target !== searchInput && !searchResults.contains(e.target)) {
                 searchResults.style.display = 'none';
@@ -920,7 +1015,6 @@ def add_movie():
     </script>
     """)
     return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names, db=db)
-
 
 @app.route('/admin/edit_movie/<id>', methods=['GET', 'POST'])
 @login_required
