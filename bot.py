@@ -62,38 +62,40 @@ FRONTEND_HTML = """
         .navbar { background-color: #151b2b; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .search-bar { max-width: 400px; width: 100%; flex: 1; }
         
-        /* Grid fixed for Mobile: exactly 2 columns */
-        .movie-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; padding: 20px 0; }
+        /* Grid fixed for Mobile: guaranteed exactly 2 columns on small screens */
+        .movie-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 15px 0; width: 100%; }
         @media (min-width: 576px) { .movie-grid { grid-template-columns: repeat(3, 1fr); } }
-        @media (min-width: 768px) { .movie-grid { grid-template-columns: repeat(4, 1fr); } }
+        @media (min-width: 768px) { .movie-grid { grid-template-columns: repeat(4, 1fr); gap: 15px; } }
         @media (min-width: 992px) { .movie-grid { grid-template-columns: repeat(5, 1fr); } }
         
-        /* Hover transform removed to lock the poster in place */
-        .movie-card { display: flex; flex-direction: column; height: 100%; background: #1e2738; border-radius: 8px; overflow: hidden; position: relative; transition: box-shadow 0.3s ease; border: 1px solid #2d3748; }
+        /* Card styling without hover zoom */
+        .movie-card { background: #1e2738; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; height: 100%; border: 1px solid #2d3748; transition: box-shadow 0.3s ease; }
         .movie-card:hover { box-shadow: 0 8px 15px rgba(0,123,255,0.3); }
         
-        .movie-poster { width: 100%; aspect-ratio: 2/3; height: 100%; object-fit: cover; flex-shrink: 0; border-bottom: 1px solid #2d3748; }
+        /* Poster wrapper to keep aspects and position badges safely */
+        .poster-wrapper { position: relative; width: 100%; aspect-ratio: 2/3; overflow: hidden; border-bottom: 1px solid #2d3748; }
+        .movie-poster { width: 100%; height: 100%; object-fit: cover; }
         
-        .movie-badge { position: absolute; top: 10px; right: 10px; background: #e50914; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2;}
-        .movie-quality { position: absolute; top: 10px; left: 10px; background: #007bff; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2;}
-        .movie-views { position: absolute; bottom: 85px; left: 10px; background: rgba(0,0,0,0.7); color: #fff; padding: 2px 8px; font-size: 11px; border-radius: 4px; z-index: 2; }
+        /* Badges positioned perfectly INSIDE the poster area */
+        .movie-badge { position: absolute; top: 8px; right: 8px; background: #e50914; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
+        .movie-quality { position: absolute; top: 8px; left: 8px; background: #007bff; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
+        .movie-views { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.85); color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; z-index: 2; border: 1px solid #333; }
         
-        /* Fixed info section below poster */
-        .movie-info { padding: 10px; text-align: center; display: flex; flex-direction: column; justify-content: start; flex-grow: 1; }
-        .movie-title { font-size: 14px; font-weight: bold; color: #e2e8f0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; margin-bottom: 6px; }
-        .movie-meta { font-size: 12px; color: #8c98a4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; }
+        /* Information block BELOW the poster */
+        .movie-info { padding: 10px 8px; text-align: center; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; background: #1e2738; }
+        .movie-title { font-size: 14px; font-weight: 600; color: #e2e8f0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; margin-bottom: 6px; }
+        .movie-meta { font-size: 11px; color: #8c98a4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; }
         
         .btn-horizontal-scroll { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 12px; white-space: nowrap; align-items: stretch; }
         .btn-horizontal-scroll::-webkit-scrollbar { height: 8px; }
         .btn-horizontal-scroll::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
         .btn-horizontal-scroll::-webkit-scrollbar-track { background: #151b2b; }
         
-        /* Fixed episodes section: Vertical scroll instead of horizontal */
         .episodes-grid { display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; padding-right: 5px; padding-bottom: 12px; }
         .episodes-grid::-webkit-scrollbar { width: 6px; }
         .episodes-grid::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
         .episodes-grid::-webkit-scrollbar-track { background: #151b2b; }
-        .ep-box { background: #151b2b; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; width: 100%; display: flex; flex-direction: column; justify-content: start; border-top: 1px solid #1e2738; border-right: 1px solid #1e2738; border-bottom: 1px solid #1e2738;}
+        .ep-box { background: #151b2b; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; width: 100%; display: flex; flex-direction: column; justify-content: start; border: 1px solid #1e2738; }
         
         .nav-pills .nav-link { background: #1e2738; color: #fff; margin-right: 10px; border: 1px solid #2d3748; padding: 8px 20px; }
         .nav-pills .nav-link.active { background: #007bff; color: #fff; border-color: #007bff; box-shadow: 0 4px 6px rgba(0,123,255,0.3); }
@@ -243,16 +245,18 @@ def home():
         {% for m in movies %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none">
             <div class="movie-card">
-                {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
-                <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
-                <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                <div class="poster-wrapper">
+                    {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                    {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
+                    <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                    <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                </div>
                 <div class="movie-info">
                     <div class="movie-title">{{ m.title }}</div>
                     <div class="movie-meta">
                         <span class="text-warning fw-bold">{{ m.type }}</span>
-                        {% if m.date %} <span class="text-light ms-1">• {{ m.date[:4] }}</span> {% endif %}
-                        {% if m.language %} <span class="text-info ms-1">• {{ m.language }}</span> {% endif %}
+                        {% if m.date %} <span class="ms-1">• {{ m.date[:4] }}</span> {% endif %}
+                        {% if m.language %} <span class="ms-1">• {{ m.language }}</span> {% endif %}
                     </div>
                 </div>
             </div>
@@ -275,14 +279,18 @@ def search():
         {% for m in movies %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none">
             <div class="movie-card">
-                {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                <img src="{{ m.poster }}" class="movie-poster">
+                <div class="poster-wrapper">
+                    {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                    {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
+                    <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                    <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                </div>
                 <div class="movie-info">
                     <div class="movie-title">{{ m.title }}</div>
                     <div class="movie-meta">
                         <span class="text-warning fw-bold">{{ m.type }}</span>
-                        {% if m.date %} <span class="text-light ms-1">• {{ m.date[:4] }}</span> {% endif %}
-                        {% if m.language %} <span class="text-info ms-1">• {{ m.language }}</span> {% endif %}
+                        {% if m.date %} <span class="ms-1">• {{ m.date[:4] }}</span> {% endif %}
+                        {% if m.language %} <span class="ms-1">• {{ m.language }}</span> {% endif %}
                     </div>
                 </div>
             </div>
@@ -309,13 +317,18 @@ def category_filter(cat_name):
         {% for m in movies %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none">
             <div class="movie-card">
-                <img src="{{ m.poster }}" class="movie-poster">
+                <div class="poster-wrapper">
+                    {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                    {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
+                    <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                    <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                </div>
                 <div class="movie-info">
                     <div class="movie-title">{{ m.title }}</div>
                     <div class="movie-meta">
                         <span class="text-warning fw-bold">{{ m.type }}</span>
-                        {% if m.date %} <span class="text-light ms-1">• {{ m.date[:4] }}</span> {% endif %}
-                        {% if m.language %} <span class="text-info ms-1">• {{ m.language }}</span> {% endif %}
+                        {% if m.date %} <span class="ms-1">• {{ m.date[:4] }}</span> {% endif %}
+                        {% if m.language %} <span class="ms-1">• {{ m.language }}</span> {% endif %}
                     </div>
                 </div>
             </div>
@@ -391,7 +404,7 @@ def movie_details(id):
                     {% for s in m.seasons %}
                     <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="season_{{ s.season }}" role="tabpanel">
                         
-                        <!-- Episodes are now vertically scrollable properly -->
+                        <!-- Episodes are vertically scrollable here -->
                         <div class="episodes-grid">
                             {% for ep in s.episodes %}
                                 <div class="ep-box">
