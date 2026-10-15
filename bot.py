@@ -60,45 +60,37 @@ FRONTEND_HTML = """
     <style>
         body { background-color: #0b0f19; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .navbar { background-color: #151b2b; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        
-        /* Search bar fixed for mobile & pc */
         .search-bar { max-width: 400px; width: 100%; flex: 1; }
         
         .movie-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; padding: 20px 0; }
         @media (min-width: 768px) { .movie-grid { grid-template-columns: repeat(4, 1fr); } }
         
-        /* Fixed Poster Size Logic */
-        .movie-card { display: flex; flex-direction: column; height: 100%; background: #1e2738; border-radius: 8px; overflow: hidden; position: relative; transition: transform 0.3s ease, box-shadow 0.3s ease; border: 1px solid #2d3748; }
+        .movie-card { display: flex; flex-direction: column; height: 100%; background: #1e2738; border-radius: 8px; overflow: hidden; position: relative; transition: transform 0.3s ease; border: 1px solid #2d3748; }
         .movie-card:hover { transform: scale(1.03); box-shadow: 0 8px 15px rgba(0,123,255,0.3); }
         .movie-poster { width: 100%; aspect-ratio: 2/3; height: 100%; object-fit: cover; flex-shrink: 0; border-bottom: 1px solid #2d3748; }
         
-        .movie-badge { position: absolute; top: 10px; right: 10px; background: #e50914; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.5); z-index: 2;}
-        .movie-quality { position: absolute; top: 10px; left: 10px; background: #007bff; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.5); z-index: 2;}
+        .movie-badge { position: absolute; top: 10px; right: 10px; background: #e50914; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2;}
+        .movie-quality { position: absolute; top: 10px; left: 10px; background: #007bff; color: #fff; padding: 4px 10px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2;}
         .movie-views { position: absolute; bottom: 65px; left: 10px; background: rgba(0,0,0,0.7); color: #fff; padding: 2px 8px; font-size: 11px; border-radius: 4px; z-index: 2; }
         
         .movie-info { padding: 12px; text-align: center; display: flex; flex-direction: column; justify-content: center; flex-grow: 1; }
         .movie-title { font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e2e8f0; }
         
-        .btn-horizontal-scroll { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 12px; white-space: nowrap; align-items: center; }
+        .btn-horizontal-scroll { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 12px; white-space: nowrap; align-items: stretch; }
         .btn-horizontal-scroll::-webkit-scrollbar { height: 8px; }
         .btn-horizontal-scroll::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
         .btn-horizontal-scroll::-webkit-scrollbar-track { background: #151b2b; }
-        .custom-dl-btn { min-width: 140px; text-align: center; font-weight: bold; border-radius: 25px; transition: 0.3s; }
-        .custom-dl-btn:hover { transform: translateY(-2px); }
-
-        .telegram-float { position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; background-color: #0088cc; color: #FFF; border-radius: 50%; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; font-size: 30px; text-decoration: none; transition: 0.3s;}
-        .telegram-float:hover { transform: scale(1.1); background-color: #0077b3; color: white; }
         
-        .accordion-button { background-color: #1e2738; color: white; font-weight: bold; }
-        .accordion-button:not(.collapsed) { background-color: #007bff; color: white; }
-        .accordion-body { background-color: #0b0f19; border: 1px solid #1e2738; }
-        
-        /* Updated Episodes Grid Logic (2 items per column, horizontal scroll) */
-        .episodes-grid { display: grid; grid-template-rows: repeat(2, auto); grid-auto-flow: column; gap: 10px; overflow-x: auto; padding-bottom: 12px; }
+        /* Updated Episodes Grid Logic (2 items per line, horizontal scroll) */
+        .episodes-grid { display: grid; grid-template-rows: repeat(2, auto); grid-auto-flow: column; gap: 12px; overflow-x: auto; padding-bottom: 12px; }
         .episodes-grid::-webkit-scrollbar { height: 8px; }
         .episodes-grid::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
-        .ep-box { background: #151b2b; padding: 10px; border-radius: 8px; border-left: 4px solid #007bff; min-width: 260px; display: flex; flex-direction: column; justify-content: start; }
+        .ep-box { background: #151b2b; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; min-width: 250px; display: flex; flex-direction: column; justify-content: start; border-top: 1px solid #1e2738; border-right: 1px solid #1e2738; border-bottom: 1px solid #1e2738;}
         
+        /* Season Tabs */
+        .nav-pills .nav-link { background: #1e2738; color: #fff; margin-right: 10px; border: 1px solid #2d3748; padding: 8px 20px; }
+        .nav-pills .nav-link.active { background: #007bff; color: #fff; border-color: #007bff; box-shadow: 0 4px 6px rgba(0,123,255,0.3); }
+
         .cat-scroll { display: flex; overflow-x: auto; gap: 10px; padding: 10px 0; }
         .cat-scroll::-webkit-scrollbar { display: none; }
         .cat-badge { background: #1e2738; color: #fff; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-size: 13px; border: 1px solid #2d3748;}
@@ -109,17 +101,13 @@ FRONTEND_HTML = """
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container d-flex flex-wrap align-items-center justify-content-between">
             <a class="navbar-brand fw-bold me-auto" href="/"><i class="fas fa-play text-primary"></i> DooPlay</a>
-            
-            <!-- Search bar is now out of the collapse menu so it's always visible -->
             <form action="/search" method="GET" class="d-flex search-bar mx-2 mx-lg-auto order-3 order-lg-2 mt-2 mt-lg-0 w-100" style="max-width: 400px;">
                 <input class="form-control me-2 bg-dark text-white border-secondary" type="search" name="q" placeholder="Search Movies, Series..." required>
                 <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i></button>
             </form>
-
             <button class="navbar-toggler ms-2 order-2 order-lg-3" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
                 <span class="navbar-toggler-icon"></span>
             </button>
-            
             <div class="collapse navbar-collapse order-4" id="navMenu" style="flex-grow: 0;">
                 <ul class="navbar-nav ms-auto mt-3 mt-lg-0">
                     <li class="nav-item"><a class="nav-link text-white" href="/admin"><i class="fas fa-user-shield text-warning"></i> Admin</a></li>
@@ -139,40 +127,8 @@ FRONTEND_HTML = """
         <!-- CONTENT_BLOCK -->
     </div>
 
-    {% if settings.telegram_link %}
-        <a href="{{ settings.telegram_link }}" target="_blank" class="telegram-float"><i class="fab fa-telegram-plane"></i></a>
-    {% endif %}
-    
-    {% if settings.popup_notice %}
-    <div class="modal fade" id="popupModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content" style="background:#151b2b; color:#fff; border: 1px solid #007bff;">
-                <div class="modal-header border-0">
-                    <h5 class="modal-title text-warning"><i class="fas fa-bullhorn"></i> Notice</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body text-center">
-                    <p>{{ settings.popup_notice }}</p>
-                    {% if settings.telegram_link %}
-                        <a href="{{ settings.telegram_link }}" target="_blank" class="btn btn-primary rounded-pill px-4 mt-2"><i class="fab fa-telegram"></i> Join Now</a>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        {% if settings.popup_notice %}
-        window.onload = () => {
-            if(!sessionStorage.getItem('popupShown')) {
-                new bootstrap.Modal(document.getElementById('popupModal')).show();
-                sessionStorage.setItem('popupShown', 'true');
-            }
-        };
-        {% endif %}
-
         const adStatus = "{{ settings.ad_status }}";
         const directLink = "{{ settings.direct_link }}";
         function checkAd(event, url) {
@@ -206,7 +162,7 @@ ADMIN_HTML = """
         .sidebar a:hover, .sidebar a.active { background-color: #1e2738; color: #007bff; border-left: 4px solid #007bff; }
         .content { padding: 30px; }
         .card { background-color: #151b2b; border: 1px solid #2d3748; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
-        .form-control, .form-select { background-color: #0b0f19; border: 1px solid #2d3748; color: #fff; }
+        .form-control, .form-select { background-color: #0b0f19; border: 1px solid #3b475c; color: #fff; }
         .form-control:focus, .form-select:focus { border-color: #007bff; background-color: #0b0f19; color: #fff; box-shadow: 0 0 5px rgba(0,123,255,0.5); }
     </style>
 </head>
@@ -298,51 +254,6 @@ def home():
     """)
     return render_template_string(html, movies=movies, categories=categories, db=db)
 
-@app.route('/search')
-def search():
-    query = request.args.get('q', '')
-    movies = list(movies_col.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
-    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <h4 class="mb-3 border-start border-primary border-4 ps-2">Search Results for: <span class="text-warning">{{ query }}</span></h4>
-    <div class="movie-grid">
-        {% for m in movies %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none">
-            <div class="movie-card">
-                {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                <img src="{{ m.poster }}" class="movie-poster">
-                <div class="movie-info">
-                    <div class="movie-title">{{ m.title }}</div>
-                </div>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-    {% if not movies %}<h5 class="text-center text-muted mt-5">No results found!</h5>{% endif %}
-    """)
-    return render_template_string(html, movies=movies, query=query, db=db)
-
-@app.route('/category/<cat_name>')
-def category_filter(cat_name):
-    movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
-    categories = list(options_col.find({"type": "category"}))
-    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <div class="cat-scroll mb-3">
-        <a href="/" class="cat-badge">All</a>
-        {% for c in categories %}
-            <a href="/category/{{ c.value }}" class="cat-badge {% if cat_name == c.value %}bg-primary{% endif %}">{{ c.value }}</a>
-        {% endfor %}
-    </div>
-    <h4 class="mb-3 border-start border-primary border-4 ps-2">Category: <span class="text-warning">{{ cat_name }}</span></h4>
-    <div class="movie-grid">
-        {% for m in movies %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none">
-            <div class="movie-card"><img src="{{ m.poster }}" class="movie-poster"><div class="movie-info"><div class="movie-title">{{ m.title }}</div></div></div>
-        </a>
-        {% endfor %}
-    </div>
-    """)
-    return render_template_string(html, movies=movies, cat_name=cat_name, categories=categories, db=db)
-
 @app.route('/movie/<id>')
 def movie_details(id):
     movies_col.update_one({"_id": ObjectId(id)}, {"$inc": {"views": 1}})
@@ -377,11 +288,14 @@ def movie_details(id):
                 <div class="btn-horizontal-scroll">
                     {% if m.links %}
                         {% for link in m.links %}
-                        <a href="{{ link.url }}" onclick="checkAd(event, '{{ link.url }}')" class="btn btn-outline-info custom-dl-btn">
-                            {% if 'online' in link.name.lower() or 'watch' in link.name.lower() %}<i class="fas fa-play-circle"></i>
-                            {% elif 'telegram' in link.name.lower() %}<i class="fab fa-telegram"></i>
-                            {% else %}<i class="fas fa-download"></i>{% endif %}
-                            {{ link.name }}
+                        <a href="{{ link.url }}" onclick="checkAd(event, '{{ link.url }}')" class="btn btn-outline-info custom-dl-btn p-2 d-flex flex-column align-items-center justify-content-center">
+                            <span class="fw-bold mb-1">
+                                {% if 'online' in link.name.lower() or 'watch' in link.name.lower() %}<i class="fas fa-play-circle"></i>
+                                {% elif 'telegram' in link.name.lower() %}<i class="fab fa-telegram"></i>
+                                {% else %}<i class="fas fa-download"></i>{% endif %}
+                                {{ link.name }}
+                            </span>
+                            {% if link.quality %}<span class="badge bg-primary" style="font-size: 0.70rem;">{{ link.quality }}</span>{% endif %}
                         </a>
                         {% endfor %}
                     {% else %}
@@ -390,45 +304,49 @@ def movie_details(id):
                 </div>
             {% else %}
                 <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Seasons & Episodes</h4>
-                <div class="accordion shadow-sm" id="seasonsAccordion">
+                
+                <!-- ডানে-বামে স্ক্রল করার জন্য সিজন ট্যাব -->
+                <ul class="nav nav-pills flex-nowrap overflow-auto mb-3 pb-2" id="seasonTabs" role="tablist" style="scrollbar-width: thin;">
                     {% for s in m.seasons %}
-                    <div class="accordion-item mb-2 border-0 bg-transparent">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed rounded" type="button" data-bs-toggle="collapse" data-bs-target="#collapseS{{ s.season }}">
-                                <i class="fas fa-folder-open me-2 text-warning"></i> Season {{ s.season }}
-                            </button>
-                        </h2>
-                        <div id="collapseS{{ s.season }}" class="accordion-collapse collapse mt-2" data-bs-parent="#seasonsAccordion">
-                            <div class="accordion-body p-0 border-0 bg-transparent rounded">
-                                <!-- Episodes Grid Scrollable -->
-                                <div class="episodes-grid">
-                                    {% for ep in s.episodes %}
-                                        <div class="ep-box">
-                                            <!-- Episode Button to reveal Links -->
-                                            <button class="btn btn-outline-primary btn-sm w-100 text-start fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
-                                                <span><i class="fas fa-tv me-1"></i> Episode {{ ep.episode }}</span> 
-                                                <i class="fas fa-chevron-down"></i>
-                                            </button>
-                                            
-                                            <!-- Hidden Links Area -->
-                                            <div id="links_S{{s.season}}_E{{ep.episode}}" class="collapse mt-2">
-                                                <div class="d-flex flex-column gap-2">
-                                                    {% if ep.links %}
-                                                        {% for link in ep.links %}
-                                                        <a href="{{ link.url }}" onclick="checkAd(event, '{{ link.url }}')" class="btn btn-primary btn-sm text-truncate w-100">
-                                                            {{ link.name }}
-                                                        </a>
-                                                        {% endfor %}
-                                                    {% else %}
-                                                        <span class="text-muted small text-center">No links available.</span>
-                                                    {% endif %}
-                                                </div>
-                                            </div>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link {% if loop.first %}active{% endif %} fw-bold rounded-pill" data-bs-toggle="pill" data-bs-target="#season_{{ s.season }}" type="button" role="tab" style="white-space: nowrap;">
+                            <i class="fas fa-folder-open me-1"></i> Season {{ s.season }}
+                        </button>
+                    </li>
+                    {% endfor %}
+                </ul>
+
+                <!-- সিজনের ভেতরের ইপিসোড গ্রিড (এক লাইনে ২টা করে, ডানে বামে স্ক্রল) -->
+                <div class="tab-content" id="seasonTabsContent">
+                    {% for s in m.seasons %}
+                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="season_{{ s.season }}" role="tabpanel">
+                        
+                        <div class="episodes-grid">
+                            {% for ep in s.episodes %}
+                                <div class="ep-box">
+                                    <button class="btn btn-outline-primary btn-sm w-100 text-start fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
+                                        <span><i class="fas fa-tv me-1"></i> Episode {{ ep.episode }}</span> 
+                                        <i class="fas fa-chevron-down"></i>
+                                    </button>
+                                    
+                                    <div id="links_S{{s.season}}_E{{ep.episode}}" class="collapse mt-2">
+                                        <div class="d-flex flex-column gap-2">
+                                            {% if ep.links %}
+                                                {% for link in ep.links %}
+                                                <a href="{{ link.url }}" onclick="checkAd(event, '{{ link.url }}')" class="btn btn-primary btn-sm text-truncate w-100 d-flex justify-content-between align-items-center">
+                                                    <span><i class="fas fa-download"></i> {{ link.name }}</span>
+                                                    {% if link.quality %}<span class="badge bg-dark ms-1" style="font-size:0.70rem;">{{ link.quality }}</span>{% endif %}
+                                                </a>
+                                                {% endfor %}
+                                            {% else %}
+                                                <span class="text-muted small text-center w-100 d-block border border-secondary rounded p-1">No links available</span>
+                                            {% endif %}
                                         </div>
-                                    {% endfor %}
+                                    </div>
                                 </div>
-                            </div>
+                            {% endfor %}
                         </div>
+
                     </div>
                     {% endfor %}
                 </div>
@@ -591,7 +509,7 @@ def admin_options():
                 <option value="badge">Badge (CAM, HD..)</option>
                 <option value="quality">Quality (1080p..)</option>
                 <option value="language">Language (Hindi..)</option>
-                <option value="link_name">Link Name (Download 1080p..)</option>
+                <option value="link_name">Link Name (Download, Watch..)</option>
             </select>
             <input type="text" name="value" class="form-control flex-grow-1" placeholder="নাম লিখুন..." required>
             <button type="submit" class="btn btn-success fw-bold px-4">Add New</button>
@@ -635,12 +553,6 @@ def admin_options():
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names)
-
-@app.route('/admin/del_opt/<id>')
-@login_required
-def del_opt(id):
-    options_col.delete_one({"_id": ObjectId(id)})
-    return redirect(url_for('admin_options'))
 
 @app.route('/admin/add_movie', methods=['GET', 'POST'])
 @login_required
@@ -704,8 +616,9 @@ def add_movie():
             m_type = request.form.get('type')
             
             link_names = request.form.getlist('link_name[]')
+            link_quals = request.form.getlist('link_quality[]')
             link_urls = request.form.getlist('link_url[]')
-            links = [{"name": n, "url": u} for n, u in zip(link_names, link_urls) if n and u]
+            links = [{"name": n, "quality": q, "url": u} for n, q, u in zip(link_names, link_quals, link_urls) if n and u]
             
             new_doc = {
                 "title": title, "type": m_type, "poster": request.form.get('poster'),
@@ -727,17 +640,10 @@ def add_movie():
     qualities = list(options_col.find({"type": "quality"}))
     langs = list(options_col.find({"type": "language"}))
     cats = list(options_col.find({"type": "category"}))
+    link_names = list(options_col.find({"type": "link_name"}))
 
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">মুভি / সিরিজ / ড্রামা এড</h2>
-    
-    <!-- Datalist for Link Names Dropdown -->
-    <datalist id="linkOptionsList">
-        {% set link_opts = db.options.find({"type": "link_name"}) %}
-        {% for l in link_opts %}
-            <option value="{{ l.value }}"></option>
-        {% endfor %}
-    </datalist>
 
     <div class="card p-4 mb-4 border-info shadow">
         <h4 class="text-info fw-bold mb-3"><i class="fas fa-magic"></i> ১ ক্লিকে Auto TMDB Import</h4>
@@ -793,10 +699,18 @@ def add_movie():
             
             <h5 class="mt-3 border-bottom border-secondary pb-2">Download Links (Unlimited)</h5>
             <div id="linkContainer">
-                <div class="input-group mb-2">
-                    <input type="text" name="link_name[]" class="form-control" list="linkOptionsList" placeholder="Select pre-added name or Type Custom">
+                <!-- Select Dropdowns for Links -->
+                <div class="input-group mb-2 mt-2">
+                    <select name="link_name[]" class="form-select" required>
+                        <option value="">Select Name...</option>
+                        {% for lnk in link_names %}<option value="{{ lnk.value }}">{{ lnk.value }}</option>{% endfor %}
+                    </select>
+                    <select name="link_quality[]" class="form-select">
+                        <option value="">Quality...</option>
+                        {% for q in qualities %}<option value="{{ q.value }}">{{ q.value }}</option>{% endfor %}
+                    </select>
                     <input type="url" name="link_url[]" class="form-control" placeholder="URL Link">
-                    <button type="button" class="btn btn-success" onclick="addLinkField('linkContainer', 'link_name[]', 'link_url[]')"><i class="fas fa-plus"></i></button>
+                    <button type="button" class="btn btn-success" onclick="addLinkField('linkContainer', 'link_name[]', 'link_quality[]', 'link_url[]')"><i class="fas fa-plus"></i></button>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary w-100 mt-4 fw-bold fs-5">Publish Manual Post</button>
@@ -804,17 +718,22 @@ def add_movie():
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', """
     <script>
-        function addLinkField(containerId, nameAttr, urlAttr) {
+        const linkNameOpts = `<option value="">Select Name...</option>{% for lnk in link_names %}<option value="{{ lnk.value }}">{{ lnk.value }}</option>{% endfor %}`;
+        const qualOpts = `<option value="">Quality...</option>{% for q in qualities %}<option value="{{ q.value }}">{{ q.value }}</option>{% endfor %}`;
+
+        function addLinkField(containerId, nameAttr, qualAttr, urlAttr) {
             let div = document.createElement('div');
             div.className = "input-group mb-2 mt-2";
-            div.innerHTML = `<input type="text" name="${nameAttr}" class="form-control" list="linkOptionsList" placeholder="Select Pre-added or Type">
-                             <input type="url" name="${urlAttr}" class="form-control" placeholder="URL">
-                             <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>`;
+            div.innerHTML = `
+                <select name="${nameAttr}" class="form-select" required>${linkNameOpts}</select>
+                <select name="${qualAttr}" class="form-select">${qualOpts}</select>
+                <input type="url" name="${urlAttr}" class="form-control" placeholder="URL" required>
+                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>`;
             document.getElementById(containerId).appendChild(div);
         }
     </script>
     """)
-    return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, db=db)
+    return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names, db=db)
 
 
 @app.route('/admin/edit_movie/<id>', methods=['GET', 'POST'])
@@ -835,15 +754,17 @@ def edit_movie(id):
         
         if movie['type'] == 'Movie':
             l_names = request.form.getlist('link_name[]')
+            l_quals = request.form.getlist('link_quality[]')
             l_urls = request.form.getlist('link_url[]')
-            update_data['links'] = [{"name": n, "url": u} for n, u in zip(l_names, l_urls) if n and u]
+            update_data['links'] = [{"name": n, "quality": q, "url": u} for n, q, u in zip(l_names, l_quals, l_urls) if n and u]
         else:
             seasons = movie.get('seasons', [])
             for s in seasons:
                 for ep in s['episodes']:
                     l_names = request.form.getlist(f"link_name_S{s['season']}_E{ep['episode']}[]")
+                    l_quals = request.form.getlist(f"link_quality_S{s['season']}_E{ep['episode']}[]")
                     l_urls = request.form.getlist(f"link_url_S{s['season']}_E{ep['episode']}[]")
-                    ep['links'] = [{"name": n, "url": u} for n, u in zip(l_names, l_urls) if n and u]
+                    ep['links'] = [{"name": n, "quality": q, "url": u} for n, q, u in zip(l_names, l_quals, l_urls) if n and u]
             update_data['seasons'] = seasons
             
         movies_col.update_one({"_id": ObjectId(id)}, {"$set": update_data})
@@ -854,16 +775,10 @@ def edit_movie(id):
     qualities = list(options_col.find({"type": "quality"}))
     langs = list(options_col.find({"type": "language"}))
     cats = list(options_col.find({"type": "category"}))
+    link_names = list(options_col.find({"type": "link_name"}))
 
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-warning border-4 ps-2 mb-4">Edit: <span class="text-primary">{{ m.title }}</span></h2>
-    
-    <datalist id="linkOptionsList">
-        {% set link_opts = db.options.find({"type": "link_name"}) %}
-        {% for l in link_opts %}
-            <option value="{{ l.value }}"></option>
-        {% endfor %}
-    </datalist>
     
     <div class="card p-4">
         <form method="POST">
@@ -894,13 +809,20 @@ def edit_movie(id):
                 <div id="movieLinks">
                     {% for link in m.links %}
                     <div class="input-group mb-2">
-                        <input type="text" name="link_name[]" class="form-control" list="linkOptionsList" value="{{ link.name }}">
-                        <input type="url" name="link_url[]" class="form-control" value="{{ link.url }}">
+                        <select name="link_name[]" class="form-select" required>
+                            <option value="">Select Name...</option>
+                            {% for lnk in link_names %}<option value="{{lnk.value}}" {% if link.name == lnk.value %}selected{% endif %}>{{lnk.value}}</option>{% endfor %}
+                        </select>
+                        <select name="link_quality[]" class="form-select">
+                            <option value="">Quality...</option>
+                            {% for q in qualities %}<option value="{{q.value}}" {% if link.quality == q.value %}selected{% endif %}>{{q.value}}</option>{% endfor %}
+                        </select>
+                        <input type="url" name="link_url[]" class="form-control" value="{{ link.url }}" required>
                         <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>
                     </div>
                     {% endfor %}
                 </div>
-                <button type="button" class="btn btn-success btn-sm mb-3" onclick="addLinkField('movieLinks', 'link_name[]', 'link_url[]')"><i class="fas fa-plus"></i> Add Link</button>
+                <button type="button" class="btn btn-success btn-sm mb-3 mt-2" onclick="addLinkField('movieLinks', 'link_name[]', 'link_quality[]', 'link_url[]')"><i class="fas fa-plus"></i> Add Link</button>
             {% else %}
                 <h4 class="mb-3 text-info fw-bold">Seasons & Episodes Links</h4>
                 <div class="accordion text-dark" id="adminSeasons">
@@ -918,14 +840,21 @@ def edit_movie(id):
                                         <h5 class="text-warning">Episode {{ ep.episode }}</h5>
                                         <div id="links_S{{ s.season }}_E{{ ep.episode }}">
                                             {% for link in ep.links %}
-                                            <div class="input-group mb-2">
-                                                <input type="text" name="link_name_S{{ s.season }}_E{{ ep.episode }}[]" class="form-control" list="linkOptionsList" value="{{ link.name }}">
-                                                <input type="url" name="link_url_S{{ s.season }}_E{{ ep.episode }}[]" class="form-control" value="{{ link.url }}">
+                                            <div class="input-group mb-2 mt-2">
+                                                <select name="link_name_S{{ s.season }}_E{{ ep.episode }}[]" class="form-select" required>
+                                                    <option value="">Select Name...</option>
+                                                    {% for lnk in link_names %}<option value="{{lnk.value}}" {% if link.name == lnk.value %}selected{% endif %}>{{lnk.value}}</option>{% endfor %}
+                                                </select>
+                                                <select name="link_quality_S{{ s.season }}_E{{ ep.episode }}[]" class="form-select">
+                                                    <option value="">Quality...</option>
+                                                    {% for q in qualities %}<option value="{{q.value}}" {% if link.quality == q.value %}selected{% endif %}>{{q.value}}</option>{% endfor %}
+                                                </select>
+                                                <input type="url" name="link_url_S{{ s.season }}_E{{ ep.episode }}[]" class="form-control" value="{{ link.url }}" required>
                                                 <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>
                                             </div>
                                             {% endfor %}
                                         </div>
-                                        <button type="button" class="btn btn-outline-success btn-sm mt-2" onclick="addLinkField('links_S{{ s.season }}_E{{ ep.episode }}', 'link_name_S{{ s.season }}_E{{ ep.episode }}[]', 'link_url_S{{ s.season }}_E{{ ep.episode }}[]')"><i class="fas fa-plus"></i> Add Link</button>
+                                        <button type="button" class="btn btn-outline-success btn-sm mt-2" onclick="addLinkField('links_S{{ s.season }}_E{{ ep.episode }}', 'link_name_S{{ s.season }}_E{{ ep.episode }}[]', 'link_quality_S{{ s.season }}_E{{ ep.episode }}[]', 'link_url_S{{ s.season }}_E{{ ep.episode }}[]')"><i class="fas fa-plus"></i> Add Link</button>
                                     </div>
                                 {% endfor %}
                             </div>
@@ -940,17 +869,22 @@ def edit_movie(id):
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', """
     <script>
-        function addLinkField(containerId, nameAttr, urlAttr) {
+        const linkNameOpts = `<option value="">Select Name...</option>{% for lnk in link_names %}<option value="{{ lnk.value }}">{{ lnk.value }}</option>{% endfor %}`;
+        const qualOpts = `<option value="">Quality...</option>{% for q in qualities %}<option value="{{ q.value }}">{{ q.value }}</option>{% endfor %}`;
+
+        function addLinkField(containerId, nameAttr, qualAttr, urlAttr) {
             let div = document.createElement('div');
             div.className = "input-group mb-2 mt-2";
-            div.innerHTML = `<input type="text" name="${nameAttr}" class="form-control" list="linkOptionsList" placeholder="Select Pre-added or Type">
-                             <input type="url" name="${urlAttr}" class="form-control" placeholder="URL">
-                             <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>`;
+            div.innerHTML = `
+                <select name="${nameAttr}" class="form-select" required>${linkNameOpts}</select>
+                <select name="${qualAttr}" class="form-select">${qualOpts}</select>
+                <input type="url" name="${urlAttr}" class="form-control" placeholder="URL" required>
+                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>`;
             document.getElementById(containerId).appendChild(div);
         }
     </script>
     """)
-    return render_template_string(html, m=movie, badges=badges, qualities=qualities, langs=langs, cats=cats, db=db)
+    return render_template_string(html, m=movie, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names, db=db)
 
 @app.route('/admin/all_movies')
 @login_required
