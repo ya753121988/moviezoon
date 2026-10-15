@@ -81,13 +81,11 @@ FRONTEND_HTML = """
         .btn-horizontal-scroll::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
         .btn-horizontal-scroll::-webkit-scrollbar-track { background: #151b2b; }
         
-        /* Updated Episodes Grid Logic (2 items per line, horizontal scroll) */
         .episodes-grid { display: grid; grid-template-rows: repeat(2, auto); grid-auto-flow: column; gap: 12px; overflow-x: auto; padding-bottom: 12px; }
         .episodes-grid::-webkit-scrollbar { height: 8px; }
         .episodes-grid::-webkit-scrollbar-thumb { background-color: #007bff; border-radius: 10px; }
         .ep-box { background: #151b2b; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; min-width: 250px; display: flex; flex-direction: column; justify-content: start; border-top: 1px solid #1e2738; border-right: 1px solid #1e2738; border-bottom: 1px solid #1e2738;}
         
-        /* Season Tabs */
         .nav-pills .nav-link { background: #1e2738; color: #fff; margin-right: 10px; border: 1px solid #2d3748; padding: 8px 20px; }
         .nav-pills .nav-link.active { background: #007bff; color: #fff; border-color: #007bff; box-shadow: 0 4px 6px rgba(0,123,255,0.3); }
 
@@ -254,6 +252,51 @@ def home():
     """)
     return render_template_string(html, movies=movies, categories=categories, db=db)
 
+@app.route('/search')
+def search():
+    query = request.args.get('q', '')
+    movies = list(movies_col.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
+    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
+    <h4 class="mb-3 border-start border-primary border-4 ps-2">Search Results for: <span class="text-warning">{{ query }}</span></h4>
+    <div class="movie-grid">
+        {% for m in movies %}
+        <a href="/movie/{{ m._id }}" class="text-decoration-none">
+            <div class="movie-card">
+                {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                <img src="{{ m.poster }}" class="movie-poster">
+                <div class="movie-info">
+                    <div class="movie-title">{{ m.title }}</div>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% if not movies %}<h5 class="text-center text-muted mt-5">No results found!</h5>{% endif %}
+    """)
+    return render_template_string(html, movies=movies, query=query, db=db)
+
+@app.route('/category/<cat_name>')
+def category_filter(cat_name):
+    movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
+    categories = list(options_col.find({"type": "category"}))
+    html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
+    <div class="cat-scroll mb-3">
+        <a href="/" class="cat-badge">All</a>
+        {% for c in categories %}
+            <a href="/category/{{ c.value }}" class="cat-badge {% if cat_name == c.value %}bg-primary{% endif %}">{{ c.value }}</a>
+        {% endfor %}
+    </div>
+    <h4 class="mb-3 border-start border-primary border-4 ps-2">Category: <span class="text-warning">{{ cat_name }}</span></h4>
+    <div class="movie-grid">
+        {% for m in movies %}
+        <a href="/movie/{{ m._id }}" class="text-decoration-none">
+            <div class="movie-card"><img src="{{ m.poster }}" class="movie-poster"><div class="movie-info"><div class="movie-title">{{ m.title }}</div></div></div>
+        </a>
+        {% endfor %}
+    </div>
+    """)
+    return render_template_string(html, movies=movies, cat_name=cat_name, categories=categories, db=db)
+
 @app.route('/movie/<id>')
 def movie_details(id):
     movies_col.update_one({"_id": ObjectId(id)}, {"$inc": {"views": 1}})
@@ -305,7 +348,6 @@ def movie_details(id):
             {% else %}
                 <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Seasons & Episodes</h4>
                 
-                <!-- ডানে-বামে স্ক্রল করার জন্য সিজন ট্যাব -->
                 <ul class="nav nav-pills flex-nowrap overflow-auto mb-3 pb-2" id="seasonTabs" role="tablist" style="scrollbar-width: thin;">
                     {% for s in m.seasons %}
                     <li class="nav-item" role="presentation">
@@ -316,7 +358,6 @@ def movie_details(id):
                     {% endfor %}
                 </ul>
 
-                <!-- সিজনের ভেতরের ইপিসোড গ্রিড (এক লাইনে ২টা করে, ডানে বামে স্ক্রল) -->
                 <div class="tab-content" id="seasonTabsContent">
                     {% for s in m.seasons %}
                     <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="season_{{ s.season }}" role="tabpanel">
@@ -457,7 +498,7 @@ def admin_settings():
         <div class="row mb-4">
             <div class="col-md-4 mb-2"><label>Admin Username</label><input type="text" name="admin_user" class="form-control" value="{{ s.admin_user }}" required></div>
             <div class="col-md-4 mb-2"><label>Admin Password</label><input type="text" name="admin_pass" class="form-control" value="{{ s.admin_pass }}" required></div>
-            <div class="col-md-4 mb-2"><label>TMDB API Key</label><input type="text" name="tmdb_api_key" class="form-control" value="{{ s.tmdb_api_key }}"></div>
+            <div class="col-md-4 mb-2"><label>TMDB API Key V3</label><input type="text" name="tmdb_api_key" class="form-control" value="{{ s.tmdb_api_key }}" placeholder="Required for TMDB Import & Live Search"></div>
         </div>
 
         <h5 class="text-info border-bottom border-secondary pb-2"><i class="fas fa-ad"></i> Ads & Links</h5>
@@ -554,6 +595,35 @@ def admin_options():
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names)
 
+# NEW: LIVE SEARCH API ROUTE
+@app.route('/admin/tmdb_search')
+@login_required
+def tmdb_search():
+    query = request.args.get('q')
+    api_key = settings_col.find_one({"type": "general"}).get('tmdb_api_key')
+    if not api_key or not query:
+        return jsonify([])
+    
+    url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={query}&language=en-US&page=1"
+    try:
+        res = requests.get(url).json()
+        results = []
+        for item in res.get('results', []):
+            if item.get('media_type') in ['movie', 'tv']:
+                title = item.get('title') if item.get('media_type') == 'movie' else item.get('name')
+                date = item.get('release_date') if item.get('media_type') == 'movie' else item.get('first_air_date')
+                poster = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else "https://via.placeholder.com/92x138?text=No+Image"
+                results.append({
+                    'id': item.get('id'),
+                    'title': title,
+                    'type': item.get('media_type'),
+                    'date': date,
+                    'poster': poster
+                })
+        return jsonify(results)
+    except:
+        return jsonify([])
+
 @app.route('/admin/add_movie', methods=['GET', 'POST'])
 @login_required
 def add_movie():
@@ -645,8 +715,27 @@ def add_movie():
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">মুভি / সিরিজ / ড্রামা এড</h2>
 
+    <!-- TMDB LIVE SEARCH SECTION (NEW FEATURE) -->
+    <div class="card p-4 mb-4 border-success shadow" style="background:#151b2b;">
+        <h4 class="text-success fw-bold mb-3"><i class="fas fa-search"></i> লাইভ TMDB সার্চ ও ইম্পোর্ট</h4>
+        <div class="position-relative">
+            <input type="text" id="liveSearchInput" class="form-control form-control-lg bg-dark text-white border-success" placeholder="মুভি বা সিরিজের নাম লিখুন...">
+            <div id="liveSearchResults" class="list-group position-absolute w-100 shadow-lg" style="z-index: 1000; max-height: 400px; overflow-y: auto; display: none;">
+                <!-- Search results will appear here -->
+            </div>
+        </div>
+        
+        <!-- Hidden Form used to trigger backend import when a result is clicked -->
+        <form id="hiddenImportForm" method="POST" style="display:none;">
+            <input type="hidden" name="action" value="fetch_tmdb">
+            <input type="hidden" name="tmdb_id" id="hidden_tmdb_id">
+            <input type="hidden" name="fetch_type" id="hidden_fetch_type">
+        </form>
+    </div>
+
+    <!-- TMDB MANUAL ID IMPORT -->
     <div class="card p-4 mb-4 border-info shadow">
-        <h4 class="text-info fw-bold mb-3"><i class="fas fa-magic"></i> ১ ক্লিকে Auto TMDB Import</h4>
+        <h4 class="text-info fw-bold mb-3"><i class="fas fa-hashtag"></i> TMDB ID দিয়ে ইম্পোর্ট</h4>
         <form method="POST" class="row align-items-end">
             <input type="hidden" name="action" value="fetch_tmdb">
             <div class="col-md-5 mb-2">
@@ -666,6 +755,7 @@ def add_movie():
         </form>
     </div>
 
+    <!-- MANUAL POST ADD -->
     <div class="card p-4 shadow">
         <h4 class="text-warning fw-bold mb-3"><i class="fas fa-edit"></i> Manual Publish</h4>
         <form method="POST">
@@ -699,7 +789,6 @@ def add_movie():
             
             <h5 class="mt-3 border-bottom border-secondary pb-2">Download Links (Unlimited)</h5>
             <div id="linkContainer">
-                <!-- Select Dropdowns for Links -->
                 <div class="input-group mb-2 mt-2">
                     <select name="link_name[]" class="form-select" required>
                         <option value="">Select Name...</option>
@@ -718,6 +807,7 @@ def add_movie():
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', """
     <script>
+        // JS for Add Links Field
         const linkNameOpts = `<option value="">Select Name...</option>{% for lnk in link_names %}<option value="{{ lnk.value }}">{{ lnk.value }}</option>{% endfor %}`;
         const qualOpts = `<option value="">Quality...</option>{% for q in qualities %}<option value="{{ q.value }}">{{ q.value }}</option>{% endfor %}`;
 
@@ -731,6 +821,58 @@ def add_movie():
                 <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>`;
             document.getElementById(containerId).appendChild(div);
         }
+
+        // JS for Live TMDB Search
+        const searchInput = document.getElementById('liveSearchInput');
+        const searchResults = document.getElementById('liveSearchResults');
+        
+        let timeout = null;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(timeout);
+            const query = this.value;
+            if(query.length < 2) {
+                searchResults.style.display = 'none';
+                return;
+            }
+            timeout = setTimeout(() => {
+                fetch(`/admin/tmdb_search?q=${query}`)
+                .then(res => res.json())
+                .then(data => {
+                    searchResults.innerHTML = '';
+                    if(data.length > 0) {
+                        data.forEach(item => {
+                            const btn = document.createElement('button');
+                            btn.className = "list-group-item list-group-item-action d-flex align-items-center bg-dark text-white border-secondary";
+                            btn.innerHTML = `
+                                <img src="${item.poster}" alt="poster" width="40" class="me-3 rounded">
+                                <div>
+                                    <h6 class="mb-0 fw-bold">${item.title} <span class="badge bg-secondary ms-2">${item.type.toUpperCase()}</span></h6>
+                                    <small class="text-muted">${item.date || 'N/A'}</small>
+                                </div>
+                                <span class="ms-auto btn btn-sm btn-success fw-bold">Import</span>
+                            `;
+                            btn.onclick = () => {
+                                document.getElementById('hidden_tmdb_id').value = item.id;
+                                document.getElementById('hidden_fetch_type').value = item.type;
+                                document.getElementById('hiddenImportForm').submit();
+                            };
+                            searchResults.appendChild(btn);
+                        });
+                        searchResults.style.display = 'block';
+                    } else {
+                        searchResults.innerHTML = '<div class="list-group-item bg-dark text-white border-secondary">কোনো রেজাল্ট পাওয়া যায়নি! API Key চেক করুন।</div>';
+                        searchResults.style.display = 'block';
+                    }
+                });
+            }, 500);
+        });
+        
+        // Hide search results if clicked outside
+        document.addEventListener('click', function(e) {
+            if(e.target !== searchInput && !searchResults.contains(e.target)) {
+                searchResults.style.display = 'none';
+            }
+        });
     </script>
     """)
     return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names, db=db)
