@@ -5,6 +5,7 @@ from bson.objectid import ObjectId
 import requests
 import os
 import json
+from urllib.parse import unquote  # %20 URL decoding fix
 
 app = Flask(__name__)
 app.secret_key = "dooplay_ultra_pro_max_secret"
@@ -30,6 +31,7 @@ if not settings_col.find_one({"type": "general"}):
         "ad_banner_home_mobile": "",
         "ad_banner_detail_desktop": "",
         "ad_banner_detail_mobile": "",
+        "ad_banner_popular": "", # Popular Ad Field Added
         "direct_links": [],
         "notice": "Welcome to our Premium Movie Site!",
         "popup_notice": "Join our Telegram Group!",
@@ -97,9 +99,20 @@ FRONTEND_HTML = """
         .cat-scroll::-webkit-scrollbar { display: none; }
         .cat-badge { background: #1e2738; color: #fff; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-size: 13px; border: 1px solid #2d3748; white-space: nowrap;}
         .cat-badge:hover { background: #007bff; }
+        
+        /* Loading Overlay Styling */
+        #page-loader { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(11, 15, 25, 0.85); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; backdrop-filter: blur(5px); }
+        .spinner { width: 60px; height: 60px; border: 6px solid #1e2738; border-top: 6px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
+    <!-- Fullscreen Loading Overlay -->
+    <div id="page-loader">
+        <div class="spinner"></div>
+        <h5 class="mt-3 text-white fw-bold">Please Wait...</h5>
+    </div>
+
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container d-flex flex-wrap align-items-center justify-content-between">
             <a class="navbar-brand fw-bold me-auto" href="/"><i class="fas fa-play text-primary"></i> DooPlay</a>
@@ -134,6 +147,14 @@ FRONTEND_HTML = """
         
         <!-- BANNER ADS SYSTEM (Desktop & Mobile Specific) -->
         {% if settings.get('ad_status_banner') == 'on' %}
+            <!-- Popular Ad Section -->
+            {% if settings.get('ad_banner_popular') %}
+                <div class="text-center mb-3 ad-box w-100">
+                    <div style="font-size: 11px; color: #8c98a4; margin-bottom: 2px;">- Popular Advertisement -</div>
+                    {{ settings.get('ad_banner_popular') | safe }}
+                </div>
+            {% endif %}
+
             {% if page_name in ['home', 'search', 'category'] %}
                 <div class="d-none d-md-block text-center mb-3 ad-box">{{ settings.get('ad_banner_home_desktop') | safe }}</div>
                 <div class="d-block d-md-none text-center mb-3 ad-box">{{ settings.get('ad_banner_home_mobile') | safe }}</div>
@@ -176,6 +197,11 @@ FRONTEND_HTML = """
                 setTimeout(() => { window.location.href = url; }, 500);
             }
             // If Ads are OFF, it will just normally follow the href attribute automatically.
+        }
+
+        // Show Loader Function
+        function showLoader() {
+            document.getElementById('page-loader').style.display = 'flex';
         }
     </script>
 </body>
@@ -273,7 +299,7 @@ def home():
     <h4 class="mb-3 border-start border-primary border-4 ps-2 fw-bold text-uppercase">Latest Updates</h4>
     <div class="movie-grid">
         {% for m in movies %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -307,7 +333,7 @@ def search():
     <h4 class="mb-3 border-start border-primary border-4 ps-2">Search Results for: <span class="text-warning">{{ query }}</span></h4>
     <div class="movie-grid">
         {% for m in movies %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -333,6 +359,7 @@ def search():
 
 @app.route('/category/<cat_name>')
 def category_filter(cat_name):
+    cat_name = unquote(cat_name) # Fix URL Encoding (%20 to space)
     movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
     categories = list(options_col.find({"type": "category"}))
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
@@ -345,7 +372,7 @@ def category_filter(cat_name):
     <h4 class="mb-3 border-start border-primary border-4 ps-2">Category: <span class="text-warning">{{ cat_name }}</span></h4>
     <div class="movie-grid">
         {% for m in movies %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -439,7 +466,7 @@ def movie_details(id):
                         {% for s in m.seasons %}
                         <li class="nav-item" role="presentation">
                             <button class="nav-link w-100 text-start {% if loop.first %}active{% endif %} fw-bold rounded" data-bs-toggle="pill" data-bs-target="#season_{{ s.season }}" type="button" role="tab">
-                                <i class="fas fa-folder-open me-2"></i> Season {{ s.season }}
+                                <i class="fas fa-folder-open me-2"></i> Season {{ "%02d"|format(s.season|int) }}
                             </button>
                         </li>
                         {% endfor %}
@@ -455,7 +482,7 @@ def movie_details(id):
                             {% for ep in s.episodes %}
                                 <div class="ep-box">
                                     <button class="btn btn-outline-primary btn-sm w-100 text-start fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
-                                        <span class="fs-6"><i class="fas fa-tv me-1"></i> Episode {{ ep.episode }}</span> 
+                                        <span class="fs-6"><i class="fas fa-tv me-1"></i> Episode {{ "%02d"|format(ep.episode|int) }}</span> 
                                         <i class="fas fa-chevron-down"></i>
                                     </button>
                                     
@@ -593,6 +620,7 @@ def admin_settings():
             "ad_banner_home_mobile": request.form.get('ad_banner_home_mobile'),
             "ad_banner_detail_desktop": request.form.get('ad_banner_detail_desktop'),
             "ad_banner_detail_mobile": request.form.get('ad_banner_detail_mobile'),
+            "ad_banner_popular": request.form.get('ad_banner_popular'),
             "direct_links": d_links,
             "telegram_link": request.form.get('telegram_link'),
             "notice": request.form.get('notice'),
@@ -644,6 +672,10 @@ def admin_settings():
                     <option value="on" {% if s.get('ad_status_banner') == 'on' %}selected{% endif %}>ON (চালু)</option>
                     <option value="off" {% if s.get('ad_status_banner') == 'off' %}selected{% endif %}>OFF (বন্ধ)</option>
                 </select>
+            </div>
+            <div class="col-md-12 mb-3">
+                <label class="text-warning"><i class="fas fa-star"></i> Popular Ad Banner (All Pages, Top Section)</label>
+                <textarea name="ad_banner_popular" class="form-control border-warning" rows="3" placeholder="Paste popular banner code here">{{ s.get('ad_banner_popular', '') }}</textarea>
             </div>
             <div class="col-md-6 mb-3">
                 <label class="text-white"><i class="fas fa-home"></i> Home Page (Desktop)</label>
@@ -1139,14 +1171,14 @@ def edit_movie(id):
                     <div class="accordion-item mb-2 border-0 bg-transparent">
                         <h2 class="accordion-header">
                             <button class="accordion-button collapsed bg-dark text-white border border-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#col_S{{ s.season }}">
-                                Season {{ s.season }}
+                                Season {{ "%02d"|format(s.season|int) }}
                             </button>
                         </h2>
                         <div id="col_S{{ s.season }}" class="accordion-collapse collapse" data-bs-parent="#adminSeasons">
                             <div class="accordion-body bg-black text-white rounded border border-secondary mt-1">
                                 {% for ep in s.episodes %}
                                     <div class="mb-3 p-3 border border-secondary rounded" style="background:#151b2b;">
-                                        <h5 class="text-warning">Episode {{ ep.episode }}</h5>
+                                        <h5 class="text-warning">Episode {{ "%02d"|format(ep.episode|int) }}</h5>
                                         <div id="links_S{{ s.season }}_E{{ ep.episode }}">
                                             {% for link in ep.links %}
                                             <div class="input-group mb-2 mt-2">
