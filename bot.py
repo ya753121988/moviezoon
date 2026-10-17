@@ -20,31 +20,34 @@ client = MongoClient(MONGO_URI)
 db = client['movie_website']
 
 movies_col = db['movies']
-tenants_col = db['tenants'] # New Collection for Subdomains (Tenants)
 options_col = db['options']
 
-# 100K+ Traffic Handling: Creating Indexes for Zero-Second DB Query
+# 🚀 NEW FEATURE: CUSTOM DOMAIN (TENANT) DATABASE
+domains_col = db['domains'] 
+
+# 100M+ Traffic Handling: Creating Indexes for Zero-Second DB Query
 try:
     movies_col.create_index([("type", 1), ("_id", -1)])
     movies_col.create_index([("categories", 1), ("_id", -1)])
     movies_col.create_index([("views", -1)])
     movies_col.create_index([("title", "text")])
-    tenants_col.create_index([("host", 1)])
+    domains_col.create_index([("host", 1)])
 except Exception as e:
     pass
 
 # ==========================================
-# Database Auto Migration & Initialization
+# 🚀 AUTO SETUP MAIN ADMIN & DOMAIN SYSTEM
 # ==========================================
-if tenants_col.count_documents({}) == 0:
+if domains_col.count_documents({}) == 0:
     old_settings = db['settings'].find_one({"type": "general"}) or {}
     old_settings.pop('_id', None)
     old_settings.pop('type', None)
     admin_user = old_settings.pop('admin_user', 'admin')
     admin_pass = old_settings.pop('admin_pass', 'admin')
     
-    tenants_col.insert_one({
-        "host": "main", # Default wildcard for Main Domain
+    # Create the Master Admin Tenant
+    domains_col.insert_one({
+        "host": "main", # Default wildcard for Main Server Domain
         "is_main": True,
         "admin_user": admin_user,
         "admin_pass": admin_pass,
@@ -57,28 +60,18 @@ if tenants_col.count_documents({}) == 0:
         }
     })
 
-# ==========================================
-# Tenant (Subdomain) Identification System
-# ==========================================
+# Identify which Custom Domain (.com/.xyz) the user is visiting
 def get_tenant():
-    host = request.host
-    # Try exact match first (e.g. sub.domain.com:5000)
-    t = tenants_col.find_one({"host": host})
+    host = request.host.split(':')[0]
+    t = domains_col.find_one({"host": host})
     if t: return t
-    
-    # Try match without port
-    host_no_port = host.split(':')[0]
-    t = tenants_col.find_one({"host": host_no_port})
-    if t: return t
-    
-    # Fallback to main admin tenant if no subdomain matches
-    return tenants_col.find_one({"is_main": True})
+    return domains_col.find_one({"is_main": True})
 
 # ==========================================
-# High Traffic In-Memory Cache System
+# High Traffic In-Memory Cache System (Isolated for Domains)
 # ==========================================
 CACHE_STORE = {}
-CACHE_TIMEOUT = 120 # Increased to 120 Seconds for extreme high traffic
+CACHE_TIMEOUT = 120 
 
 def get_cached_data(key, host):
     full_key = f"{host}_{key}"
@@ -95,7 +88,7 @@ def clear_cache():
     CACHE_STORE = {}
 
 # ==========================================
-# Admin Authentication Decorator (Tenant Isolated)
+# Admin Authentication Decorator (Separated by Domain)
 # ==========================================
 def login_required(f):
     @wraps(f)
@@ -106,11 +99,9 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ==========================================
-# Template Rendering Helpers
-# ==========================================
 def render_frontend(html, page_name, **kwargs):
     tenant = get_tenant()
+    # 🚀 EXPIRE LOCK CHECK: If domain is expired, lock the site details
     is_locked = not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time()
     settings = tenant.get('settings', {})
     return render_template_string(html, is_locked=str(is_locked), settings=settings, page_name=page_name, db=db, **kwargs)
@@ -257,9 +248,9 @@ FRONTEND_HTML = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- ZERO-SECOND DIRECT LINKS AUTO-SWITCH JS SYSTEM (No Loading Overlay) -->
+    <!-- 🚀 NEW FEATURE: 0-SECOND DIRECT REDIRECT & EXPIRE LOCK SYSTEM -->
     <script>
-        const isLocked = "{{ is_locked }}";
+        const isLocked = "{{ is_locked }}"; // Checks if Custom Domain is Expired
         const adStatusDirect = "{{ settings.get('ad_status_direct', 'off') }}";
         const rawLinks = '{{ settings.get("direct_links", []) | tojson | safe }}';
         let directLinks = [];
@@ -268,29 +259,34 @@ FRONTEND_HTML = """
         let adClickIndex = parseInt(localStorage.getItem('dooplay_ad_index')) || 0;
 
         function handleMovieClick(event, url) {
+            // Check if Domain Expired
             if(isLocked === 'True') {
                 event.preventDefault();
-                alert('⚠️ এই সাইটের সাবস্ক্রিপশন মেয়াদ শেষ হয়ে গেছে! দয়া করে এডমিনের সাথে যোগাযোগ করুন।');
+                alert('⚠️ এই ডোমেনটির সাবস্ক্রিপশন মেয়াদ শেষ হয়ে গেছে! দয়া করে মেইন এডমিনের সাথে যোগাযোগ করুন।');
                 return;
             }
+            
+            // 0-Second Redirect System (NO LOADER)
             if(adStatusDirect === 'on' && directLinks.length > 0) {
                 event.preventDefault(); 
                 let clickUrl = directLinks[adClickIndex % directLinks.length];
                 adClickIndex++;
                 localStorage.setItem('dooplay_ad_index', adClickIndex);
                 window.open(clickUrl, '_blank'); 
-                window.location.href = url; 
+                window.location.href = url; // Instant redirect
+            } else {
+                // Let native browser click happen instantly (0 Second Delay)
             }
-            // If no ad, let native browser navigation happen for 0-second loading
         }
 
+        // Check Ad for download/watch link buttons
         function checkAd(event, url) {
             if(adStatusDirect === 'on' && directLinks.length > 0) {
                 event.preventDefault();
                 let clickUrl = directLinks[adClickIndex % directLinks.length];
                 adClickIndex++;
                 localStorage.setItem('dooplay_ad_index', adClickIndex);
-                window.open(clickUrl, '_blank');
+                window.open(clickUrl, '_blank'); 
                 window.location.href = url; 
             }
         }
@@ -342,13 +338,16 @@ ADMIN_HTML = """
             <div class="col-md-2 sidebar d-none d-md-block">
                 <h4 class="text-center text-white mb-4 fw-bold"><i class="fas fa-play text-primary"></i> Admin Pro</h4>
                 <a href="/admin"><i class="fas fa-tachometer-alt me-2"></i> ড্যাশবোর্ড</a>
+                
+                <!-- 🚀 NEW FEATURE: ONLY MAIN ADMIN SEES DOMAINS MENU -->
+                {% if is_main %}
+                <a href="/admin/domains" style="color: #ffc107;"><i class="fas fa-globe me-2"></i> 🌐 কাস্টম ডোমেন এড</a>
+                {% endif %}
+                
                 <a href="/admin/add_movie"><i class="fas fa-plus-circle me-2"></i> মুভি/সিরিজ এড</a>
                 <a href="/admin/all_movies"><i class="fas fa-list me-2"></i> অল মুভি ও ডিলেট</a>
                 <a href="/admin/options"><i class="fas fa-tags me-2"></i> ব্যাজ/ক্যাটাগরি এড</a>
                 <a href="/admin/settings"><i class="fas fa-cog me-2"></i> সেটিংস ও এডস</a>
-                {% if is_main %}
-                <a href="/admin/subdomains"><i class="fas fa-server me-2"></i> সাব-ডোমেন ম্যানেজমেন্ট</a>
-                {% endif %}
                 <a href="/" target="_blank"><i class="fas fa-external-link-alt me-2"></i> সাইট দেখুন</a>
                 <a href="/logout" class="text-danger mt-5"><i class="fas fa-sign-out-alt me-2"></i> লগআউট</a>
             </div>
@@ -357,13 +356,13 @@ ADMIN_HTML = """
                 <h5 class="m-0 fw-bold"><i class="fas fa-play text-primary"></i> Admin Pro</h5>
                 <select class="form-select w-50" onchange="location = this.value;">
                     <option value="/admin">ড্যাশবোর্ড</option>
+                    {% if is_main %}
+                    <option value="/admin/domains">🌐 কাস্টম ডোমেন এড</option>
+                    {% endif %}
                     <option value="/admin/add_movie">মুভি এড</option>
                     <option value="/admin/all_movies">অল মুভি</option>
                     <option value="/admin/options">ব্যাজ/ক্যাটাগরি</option>
                     <option value="/admin/settings">সেটিংস</option>
-                    {% if is_main %}
-                    <option value="/admin/subdomains">সাব-ডোমেন ম্যানেজমেন্ট</option>
-                    {% endif %}
                     <option value="/">সাইট দেখুন</option>
                     <option value="/logout">লগআউট</option>
                 </select>
@@ -399,6 +398,7 @@ def home():
     tenant = get_tenant()
     host = tenant.get('host')
     
+    # Cache System for high traffic (100M Users)
     cached_html = get_cached_data('home_page', host)
     if cached_html:
         return cached_html
@@ -409,6 +409,7 @@ def home():
     
     top_slider = list(movies_col.find().sort('views', -1).limit(5))
     
+    # Auto Dynamic Categories Extraction
     active_types = movies_col.distinct("type")
     all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
     ordered_types = ["Movie", "Series", "Episode", "Anime"]
@@ -422,6 +423,7 @@ def home():
             if items:
                 sections[t] = items
     
+    # LATEST EPISODES EXTRACTION
     lim_e = int(limits.get('Episode', 12))
     latest_episodes = []
     recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama", "Anime"]}}).sort('_id', -1).limit(20))
@@ -469,11 +471,13 @@ def home():
         {% endfor %}
     </div>
 
+    <!-- 1. TOP MOVIE SLIDER WITH LANDSCAPE POSTER FIX -->
     <div id="topMoviesCarousel" class="carousel slide mb-4 rounded overflow-hidden shadow-lg border border-secondary" data-bs-ride="carousel">
         <div class="carousel-inner">
             {% for m in top_slider %}
             <div class="carousel-item {% if loop.first %}active{% endif %}">
                 <a href="/movie/{{ m._id }}" onclick="handleMovieClick(event, this.href)">
+                    <!-- FIX: aspect-ratio ensures 100% visibility on all devices without crop -->
                     <div style="width: 100%; aspect-ratio: 16/9; max-height: 500px; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat; position: relative;">
                         <div class="carousel-caption text-start px-md-5 pb-md-5">
                             <h2 class="fw-bold text-white shadow-sm" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">{{ m.title }}</h2>
@@ -495,6 +499,7 @@ def home():
     
     """ + promo_html + """
 
+    <!-- 2. MOVIES SECTION -->
     {% if sections.get('Movie') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-primary border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-primary">Latest Movies</h3>
@@ -524,6 +529,7 @@ def home():
     """ + promo_html + """
     {% endif %}
 
+    <!-- 3. SERIES SECTION -->
     {% if sections.get('Series') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-success border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-success">Latest Series</h3>
@@ -550,10 +556,12 @@ def home():
     """ + promo_html + """
     {% endif %}
 
+    <!-- GLOBAL MIDDLE AD -->
     {% if settings.get('ad_middle') %}
         <div class="w-100 text-center my-4">{{ settings.get('ad_middle') | safe }}</div>
     {% endif %}
 
+    <!-- 4. LATEST EPISODES SECTION (3 IN LINE ON MOBILE) -->
     {% if latest_episodes %}
     <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-info border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-info">Latest Episodes</h3>
@@ -564,8 +572,10 @@ def home():
             <div class="movie-card" style="border-color: #0dcaf0;">
                 <div class="poster-wrapper-landscape">
                     {% if ep.m_badge %}<span class="movie-badge">{{ ep.m_badge }}</span>{% endif %}
+                    <!-- EPISODE POSTER Fallback sequence -->
                     <img src="{{ ep.poster or ep.m_backdrop or ep.m_poster }}" alt="Episode" class="movie-poster" onerror="this.src='https://via.placeholder.com/600x337?text=No+Poster'">
                 </div>
+                <!-- Small padding for mobile fit -->
                 <div class="movie-info text-start p-2 p-md-3">
                     <div class="movie-title fw-bold text-info mb-1" style="font-size: 11px;">{{ ep.series_title }}</div>
                     <div class="movie-meta justify-content-start">
@@ -585,6 +595,7 @@ def home():
     """ + promo_html + """
     {% endif %}
     
+    <!-- 5. ANIME SECTION -->
     {% if sections.get('Anime') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-danger border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-danger">Latest Anime</h3>
@@ -610,6 +621,7 @@ def home():
     """ + promo_html + """
     {% endif %}
     
+    <!-- 6. ALL OTHER DYNAMIC SECTIONS (Drama, etc) -->
     {% for t in other_types %}
         {% if sections.get(t) %}
         <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-warning border-4 ps-3">
@@ -643,7 +655,7 @@ def home():
     """)
     
     rendered_html = render_frontend(html, page_name='home', top_slider=top_slider, sections=sections, latest_episodes=latest_episodes, other_types=other_types, categories=categories, promos=promos)
-    set_cached_data('home_page', host, rendered_html) 
+    set_cached_data('home_page', host, rendered_html) # Save to Custom Domain Cache
     return rendered_html
 
 @app.route('/search')
@@ -738,15 +750,15 @@ def movie_details(id):
     tenant = get_tenant()
     host = tenant.get('host')
     
-    # Server-Side Expired Subdomain Check for details
+    # 🚀 EXPIRE LOCK CHECK FOR DETAIL PAGE
     is_locked = not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time()
     if is_locked:
-        return "<h1 style='color:#ff4444; text-align:center; margin-top:50px; font-family:sans-serif;'>⚠️ This Website Subscription is Expired!</h1><h3 style='color:#fff; text-align:center; font-family:sans-serif;'>Please contact the main admin to renew.</h3>", 403
+        return f"<h1 style='color:#ff4444; text-align:center; margin-top:50px; font-family:sans-serif;'>⚠️ ডোমেন ({host}) এর সাবস্ক্রিপশন মেয়াদ শেষ!</h1><h3 style='color:#fff; text-align:center; font-family:sans-serif;'>রেনিউ করতে দয়া করে মেইন এডমিনের সাথে যোগাযোগ করুন।</h3>", 403
 
     cache_key = f"movie_{id}"
     cached_html = get_cached_data(cache_key, host)
     
-    # Update view asynchronously (fire and forget pattern for DB)
+    # Update view count asynchronously
     movies_col.update_one({"_id": ObjectId(id)}, {"$inc": {"views": 1}})
 
     if cached_html:
@@ -757,12 +769,14 @@ def movie_details(id):
     
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="row mt-3">
+        <!-- FULL WIDTH LANDSCAPE BANNER HEADER FIX -->
         <div class="col-12 mb-3">
             <div class="position-relative w-100 shadow-lg border border-secondary" style="aspect-ratio: 16/9; max-height: 60vh; border-radius: 12px; overflow: hidden; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat;">
                 {% if m.badge %}<span class="movie-badge shadow-lg" style="font-size: 16px; padding: 6px 20px; top: 15px; right: 15px;">{{ m.badge }}</span>{% endif %}
             </div>
         </div>
         
+        <!-- TITLE AND TAGS MOVED OUTSIDE POSTER FOR CLEAN VIEW -->
         <div class="col-12 mb-4">
             <h1 class="fw-bold text-white mb-3 mt-2" style="text-shadow: 1px 1px 3px #000;">{{ m.title }}</h1>
             <div class="d-flex flex-wrap gap-2 mb-3">
@@ -783,6 +797,7 @@ def movie_details(id):
             
             {% if m.type == 'Movie' %}
                 <h3 class="mb-4 fw-bold border-start border-warning border-4 ps-3">Download & Watch Links</h3>
+                
                 <div class="d-flex flex-column gap-3">
                     {% if m.links %}
                         {% for group_name, items in m.links|groupby('name') %}
@@ -816,6 +831,8 @@ def movie_details(id):
                 </div>
             {% else %}
                 <h3 class="mb-4 fw-bold border-start border-warning border-4 ps-3">Seasons & Episodes</h3>
+                
+                <!-- Vertical Scroll for Seasons -->
                 <div class="p-3 border border-secondary rounded mb-4 shadow-sm" style="background:#151b2b; max-height: 350px; overflow-y: auto; scrollbar-width: thin;">
                     <ul class="nav nav-pills flex-column gap-3" id="seasonTabs" role="tablist">
                         {% for s in m.seasons %}
@@ -831,12 +848,16 @@ def movie_details(id):
                 <div class="tab-content" id="seasonTabsContent">
                     {% for s in m.seasons %}
                     <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="season_{{ s.season }}" role="tabpanel">
+                        
+                        <!-- Episodes Grid Desktop Optimized -->
                         <div class="row g-3">
                             {% for ep in s.episodes %}
                                 <div class="col-12 col-xl-6">
                                     <div class="ep-box p-3">
+                                        <!-- EPISODE POSTER INCLUDED HERE -->
                                         <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-3" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
                                             <div class="d-flex align-items-center gap-4">
+                                                <!-- Thumb Image: Episode Poster fallback to main backdrop fallback to portrait -->
                                                 <img src="{{ ep.poster or m.backdrop or m.poster }}" class="shadow-sm" style="width: 140px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #2d3748;" onerror="this.src='{{ m.backdrop or m.poster }}'">
                                                 <div>
                                                     <span class="fs-5 text-white d-block mb-1"><i class="fas fa-tv me-2"></i> 
@@ -853,6 +874,7 @@ def movie_details(id):
                                             </div>
                                             <i class="fas fa-chevron-down fs-4 ms-2"></i>
                                         </button>
+                                        
                                         <div id="links_S{{s.season}}_E{{ep.episode}}" class="collapse mt-3">
                                             <div class="d-flex flex-column gap-3">
                                                 {% if ep.links %}
@@ -889,6 +911,7 @@ def movie_details(id):
                                 </div>
                             {% endfor %}
                         </div>
+
                     </div>
                     {% endfor %}
                 </div>
@@ -926,7 +949,7 @@ def admin_login():
     <body style="background:#0b0f19;" class="d-flex justify-content-center align-items-center vh-100">
         <div class="card p-4 shadow-lg border-primary" style="background:#151b2b; width: 350px;">
             <h3 class="text-center text-white mb-4">Admin Login</h3>
-            <p class="text-center text-muted small">{{ tenant.get('host') }}</p>
+            <p class="text-center text-warning small fw-bold">Domain: {{ tenant.get('host') }}</p>
             {% if get_flashed_messages() %}
                 <div class="alert alert-danger p-2 text-center">{{ get_flashed_messages()[0] }}</div>
             {% endif %}
@@ -974,7 +997,7 @@ def admin_dashboard():
         <div class="col-md-4 mb-3">
             <div class="card p-4 text-center border-bottom border-warning border-4">
                 <h2 class="text-warning fw-bold">{{ tv }}</h2>
-                <h6 class="text-muted m-0 text-uppercase">Total Views</h6>
+                <h6 class="text-muted m-0 text-uppercase">Total Views (Global)</h6>
             </div>
         </div>
     </div>
@@ -982,58 +1005,62 @@ def admin_dashboard():
     return render_admin(html, tm=total_movies, ts=total_series, tv=total_views)
 
 
-@app.route('/admin/subdomains', methods=['GET', 'POST'])
+# 🚀 NEW FEATURE: UNLIMITED CUSTOM DOMAINS MANAGEMENT (.com / .xyz)
+@app.route('/admin/domains', methods=['GET', 'POST'])
 @login_required
-def manage_subdomains():
+def manage_domains():
     tenant = get_tenant()
     if not tenant.get('is_main'):
-        return "Access Denied. Only Main Admin can manage Subdomains.", 403
+        return "<h2 style='color:red;'>Access Denied. Only Main Admin can manage Domains.</h2>", 403
         
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
             host = request.form.get('host').strip()
+            # Remove http:// or www. if typed accidentally
+            host = host.replace("http://", "").replace("https://", "").replace("www.", "").strip('/')
+            
             user = request.form.get('admin_user').strip()
             password = request.form.get('admin_pass').strip()
             price = request.form.get('price', 0)
             months = int(request.form.get('months', 1))
-            expire_at = time.time() + (months * 30 * 24 * 3600)
+            expire_at = time.time() + (months * 30 * 24 * 3600) # Calculate exact lock date
             
-            if tenants_col.find_one({"host": host}):
-                flash("This Subdomain/Host already exists!")
+            if domains_col.find_one({"host": host}):
+                flash("Error: এই ডোমেনটি আগেই তৈরি করা আছে!")
             else:
-                tenants_col.insert_one({
+                domains_col.insert_one({
                     "host": host,
                     "is_main": False,
                     "admin_user": user,
                     "admin_pass": password,
                     "price_paid": int(price),
                     "expire_at": expire_at,
-                    "settings": tenant.get('settings', {}) # Clone current main settings
+                    "settings": tenant.get('settings', {}) # Copy initial settings from main site
                 })
-                flash(f"Subdomain {host} added successfully!")
+                flash(f"ডোমেন {host} সফলভাবে তৈরি হয়েছে! ক্লায়েন্টকে A Record পয়েন্ট করতে বলুন।")
                 
         elif action == 'renew':
             tenant_id = request.form.get('tenant_id')
             months = int(request.form.get('months', 1))
             price = request.form.get('price', 0)
-            t = tenants_col.find_one({"_id": ObjectId(tenant_id)})
+            t = domains_col.find_one({"_id": ObjectId(tenant_id)})
             if t:
                 current_expire = t.get('expire_at', time.time())
                 if current_expire < time.time():
-                    current_expire = time.time()
+                    current_expire = time.time() # Start from today if already expired
                 new_expire = current_expire + (months * 30 * 24 * 3600)
-                tenants_col.update_one({"_id": ObjectId(tenant_id)}, {"$set": {"expire_at": new_expire}, "$inc": {"price_paid": int(price)}})
-                flash("Subdomain Renewed successfully!")
+                domains_col.update_one({"_id": ObjectId(tenant_id)}, {"$set": {"expire_at": new_expire}, "$inc": {"price_paid": int(price)}})
+                flash("ডোমেনটির মেয়াদ সফলভাবে বাড়ানো হয়েছে!")
                 
         elif action == 'delete':
             tenant_id = request.form.get('tenant_id')
-            tenants_col.delete_one({"_id": ObjectId(tenant_id)})
-            flash("Subdomain Deleted successfully!")
+            domains_col.delete_one({"_id": ObjectId(tenant_id)})
+            flash("ডোমেনটি মুছে ফেলা হয়েছে!")
             
-        return redirect(url_for('manage_subdomains'))
+        return redirect(url_for('manage_domains'))
         
-    subdomains = list(tenants_col.find({"is_main": False}).sort('_id', -1))
+    domains_list = list(domains_col.find({"is_main": False}).sort('_id', -1))
     current_time = time.time()
     
     import datetime
@@ -1041,39 +1068,43 @@ def manage_subdomains():
         return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
 
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সাব-ডোমেন (Tenant) ম্যানেজমেন্ট</h2>
+    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">কাস্টম ডোমেন (.com/.xyz) ম্যানেজমেন্ট</h2>
     
+    <div class="alert alert-info border-secondary bg-dark text-white">
+        <i class="fas fa-info-circle text-info"></i> <b>খুবই গুরুত্বপূর্ণ:</b> এখান থেকে ডোমেন এড করার পর, ক্লায়েন্টকে অবশ্যই তার ডোমেন প্রোভাইডার (Cloudflare, Namecheap ইত্যাদি) থেকে <b>A Record</b> এ আপনার সার্ভারের IP এড্রেস বসাতে হবে। তবেই ডোমেনটি লাইভ হবে!
+    </div>
+
     <div class="card p-4 mb-4 shadow border-success" style="background:#151b2b;">
-        <h4 class="text-success fw-bold mb-3"><i class="fas fa-plus"></i> নতুন সাব-ডোমেন এড করুন</h4>
+        <h4 class="text-success fw-bold mb-3"><i class="fas fa-plus"></i> নতুন ডোমেন এড করুন</h4>
         <form method="POST">
             <input type="hidden" name="action" value="add">
             <div class="row">
-                <div class="col-md-3 mb-3"><label>Subdomain/Host (e.g. sub.domain.com)</label><input type="text" name="host" class="form-control" required></div>
-                <div class="col-md-3 mb-3"><label>Admin Username</label><input type="text" name="admin_user" class="form-control" required></div>
-                <div class="col-md-2 mb-3"><label>Admin Password</label><input type="text" name="admin_pass" class="form-control" required></div>
+                <div class="col-md-3 mb-3"><label>Custom Domain (Ex: movies.com)</label><input type="text" name="host" class="form-control border-success" placeholder="example.com" required></div>
+                <div class="col-md-3 mb-3"><label>Client Username</label><input type="text" name="admin_user" class="form-control" required></div>
+                <div class="col-md-2 mb-3"><label>Client Password</label><input type="text" name="admin_pass" class="form-control" required></div>
                 <div class="col-md-2 mb-3"><label>Price Paid (৳)</label><input type="number" name="price" class="form-control" value="0"></div>
                 <div class="col-md-2 mb-3"><label>Duration (Months)</label><input type="number" name="months" class="form-control" value="1" min="1"></div>
             </div>
-            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">সাব-ডোমেন তৈরি করুন</button>
+            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">ডোমেন তৈরি করুন</button>
         </form>
     </div>
 
     <div class="card p-4 shadow" style="background:#151b2b;">
-        <h4 class="text-info fw-bold mb-3"><i class="fas fa-list"></i> অল সাব-ডোমেন লিস্ট</h4>
+        <h4 class="text-info fw-bold mb-3"><i class="fas fa-list"></i> অল ডোমেন লিস্ট</h4>
         <div class="table-responsive">
             <table class="table table-dark table-hover align-middle border-secondary">
                 <thead>
                     <tr class="text-warning">
-                        <th>Host/Domain</th>
+                        <th>Domain / URL</th>
                         <th>User / Pass</th>
-                        <th>Price Paid</th>
+                        <th>Total Paid</th>
                         <th>Expire Date</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for sub in subdomains %}
+                    {% for sub in domains_list %}
                     <tr>
                         <td class="fw-bold text-white">{{ sub.host }}</td>
                         <td>{{ sub.admin_user }} / {{ sub.admin_pass }}</td>
@@ -1087,6 +1118,7 @@ def manage_subdomains():
                             {% endif %}
                         </td>
                         <td>
+                            <!-- Renew System -->
                             <form method="POST" class="d-inline border p-1 rounded border-secondary" style="background: rgba(255,255,255,0.05);">
                                 <input type="hidden" name="action" value="renew">
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
@@ -1094,7 +1126,8 @@ def manage_subdomains():
                                 <input type="number" name="price" class="form-control form-control-sm d-inline" style="width:80px;" value="0" placeholder="Price">
                                 <button type="submit" class="btn btn-sm btn-primary fw-bold">Renew</button>
                             </form>
-                            <form method="POST" class="d-inline ms-2" onsubmit="return confirm('সাব-ডোমেনটি কি ডিলেট করতে চান?');">
+                            <!-- Delete System -->
+                            <form method="POST" class="d-inline ms-2" onsubmit="return confirm('ডোমেনটি কি ডিলেট করতে চান?');">
                                 <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
@@ -1107,7 +1140,7 @@ def manage_subdomains():
         </div>
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
-    return render_admin(html, subdomains=subdomains, format_time=format_time, current_time=current_time)
+    return render_admin(html, domains_list=domains_list, format_time=format_time, current_time=current_time)
 
 
 @app.route('/admin/settings', methods=['GET', 'POST'])
@@ -1154,7 +1187,8 @@ def admin_settings():
         new_user = request.form.get('admin_user')
         new_pass = request.form.get('admin_pass')
         
-        tenants_col.update_one({"_id": tenant['_id']}, {"$set": {
+        # Save specific to this Domain
+        domains_col.update_one({"_id": tenant['_id']}, {"$set": {
             "admin_user": new_user,
             "admin_pass": new_pass,
             "settings": new_settings
@@ -1165,7 +1199,7 @@ def admin_settings():
     s = tenant.get('settings', {})
         
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল ({{ t_host }})</h2>
+    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল (Domain: <span class="text-warning">{{ t_host }}</span>)</h2>
     <form method="POST" class="card p-4">
         
         <h5 class="text-danger border-bottom border-secondary pb-2"><i class="fas fa-layer-group"></i> Homepage Category Post Limits</h5>
@@ -1392,9 +1426,11 @@ def del_opt(id):
 def tmdb_search():
     query = request.args.get('q')
     tenant = get_tenant()
+    
+    # Check if Domain has API Key, else fallback to Main Admin Key
     api_key = tenant.get('settings', {}).get('tmdb_api_key')
     if not api_key:
-        main_tenant = tenants_col.find_one({"is_main": True})
+        main_tenant = domains_col.find_one({"is_main": True})
         if main_tenant:
             api_key = main_tenant.get('settings', {}).get('tmdb_api_key')
 
@@ -1429,7 +1465,7 @@ def add_movie():
     all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
     
     if request.method == 'POST':
-        clear_cache() # Clear global cache so it syncs across all subdomains
+        clear_cache() # Clear global cache so it syncs across all domains
         action = request.form.get('action')
         
         if action == 'fetch_tmdb':
@@ -1438,7 +1474,7 @@ def add_movie():
             
             api_key = tenant.get('settings', {}).get('tmdb_api_key')
             if not api_key:
-                main_tenant = tenants_col.find_one({"is_main": True})
+                main_tenant = domains_col.find_one({"is_main": True})
                 if main_tenant:
                     api_key = main_tenant.get('settings', {}).get('tmdb_api_key')
 
@@ -1561,6 +1597,7 @@ def add_movie():
 
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">মুভি / সিরিজ / ড্রামা এড (Global Network)</h2>
+    <div class="alert alert-secondary bg-dark border-info text-info"><i class="fas fa-info-circle"></i> আপনি এখান থেকে মুভি এড করলে তা আপনার সমস্ত ক্লায়েন্টের ডোমেনে অটোমেটিক এড হয়ে যাবে।</div>
 
     <div class="card p-4 mb-4 border-success shadow" style="background:#151b2b;">
         <h4 class="text-success fw-bold mb-3"><i class="fas fa-search"></i> লাইভ TMDB সার্চ ও ইম্পোর্ট</h4>
@@ -1962,7 +1999,6 @@ def delete_multiple():
     ids = [ObjectId(i) for i in data.get('ids', [])]
     movies_col.delete_many({"_id": {"$in": ids}})
     return jsonify({"status": "success"})
-
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
