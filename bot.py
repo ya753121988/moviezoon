@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = "dooplay_ultra_pro_max_secret"
 
 # ==========================================
-# MongoDB Database Connection
+# MongoDB Database Connection & Optimization
 # ==========================================
 MONGO_URI = "mongodb+srv://Akash:Akash@cluster0.n8ngrpu.mongodb.net/?appName=Cluster0"
 client = MongoClient(MONGO_URI)
@@ -23,11 +23,20 @@ movies_col = db['movies']
 settings_col = db['settings']
 options_col = db['options']
 
+# 100K+ Traffic Handling: Creating Indexes for Zero-Second DB Query
+try:
+    movies_col.create_index([("type", 1), ("_id", -1)])
+    movies_col.create_index([("categories", 1), ("_id", -1)])
+    movies_col.create_index([("views", -1)])
+    movies_col.create_index([("title", "text")])
+except Exception as e:
+    pass
+
 # ==========================================
 # High Traffic In-Memory Cache System (For 30k/sec users)
 # ==========================================
 CACHE_STORE = {}
-CACHE_TIMEOUT = 60 # Seconds to keep page in cache
+CACHE_TIMEOUT = 120 # Increased to 120 Seconds for extreme high traffic
 
 def get_cached_data(key):
     if key in CACHE_STORE and (time.time() - CACHE_STORE[key]['time']) < CACHE_TIMEOUT:
@@ -150,9 +159,10 @@ FRONTEND_HTML = """
         
         .carousel-caption { background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0.6) 50%, rgba(0,212,255,0) 100%); bottom: 0; left: 0; right: 0; padding-bottom: 20px; }
         
-        /* Promo styling */
-        .promo-box { border-radius: 8px; overflow: hidden; border: 1px solid #ffc107; transition: 0.3s; }
+        /* Promo styling Fixes */
+        .promo-box { border-radius: 8px; overflow: hidden; border: 1px solid #ffc107; transition: 0.3s; background-color: #1e2738; }
         .promo-box:hover { box-shadow: 0 0 15px rgba(255, 193, 7, 0.5); }
+        .promo-img { width: 100%; aspect-ratio: 16/9; object-fit: contain; background: #000; border-bottom: 1px solid #ffc107; }
 
         /* Loading Overlay Styling */
         #page-loader { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(11, 15, 25, 0.85); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; backdrop-filter: blur(5px); }
@@ -235,7 +245,7 @@ FRONTEND_HTML = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- DIRECT LINKS AUTO-SWITCH JS SYSTEM -->
+    <!-- ZERO-SECOND DIRECT LINKS AUTO-SWITCH JS SYSTEM -->
     <script>
         const adStatusDirect = "{{ settings.get('ad_status_direct', 'off') }}";
         const rawLinks = '{{ settings.get("direct_links", []) | tojson | safe }}';
@@ -244,20 +254,31 @@ FRONTEND_HTML = """
         
         let adClickIndex = parseInt(localStorage.getItem('dooplay_ad_index')) || 0;
 
+        // Poster and Global Click Handler (Zero Second redirect with Ad)
+        function handleMovieClick(event, url) {
+            event.preventDefault(); // Stop normal click
+            
+            if(adStatusDirect === 'on' && directLinks.length > 0) {
+                let clickUrl = directLinks[adClickIndex % directLinks.length];
+                adClickIndex++;
+                localStorage.setItem('dooplay_ad_index', adClickIndex);
+                window.open(clickUrl, '_blank'); // Open ad in new tab instantly
+            }
+            
+            document.getElementById('page-loader').style.display = 'flex';
+            window.location.href = url; // Current page navigates instantly
+        }
+
+        // Check Ad for download/watch link buttons
         function checkAd(event, url) {
             if(adStatusDirect === 'on' && directLinks.length > 0) {
                 event.preventDefault();
                 let clickUrl = directLinks[adClickIndex % directLinks.length];
                 adClickIndex++;
                 localStorage.setItem('dooplay_ad_index', adClickIndex);
-                window.open(clickUrl, '_blank');
-                setTimeout(() => { window.location.href = url; }, 500);
+                window.open(clickUrl, '_blank'); // Open ad in new tab
+                window.location.href = url; // Current page navigates instantly
             }
-        }
-
-        // Show Loader Function
-        function showLoader() {
-            document.getElementById('page-loader').style.display = 'flex';
         }
     </script>
 </body>
@@ -402,15 +423,15 @@ def home():
 
     categories = list(options_col.find({"type": "category"}))
     
-    # Macro for Promo Display
+    # Macro for Promo Display with new Auto Sizing Promo Class
     promo_html = """
     {% if promos %}
     <div class="row my-4">
         {% for p in promos %}
         <div class="col-6 col-md-4 col-lg-3 col-xl-2 mb-3">
             <a href="{{ p.url }}" target="_blank" class="text-decoration-none">
-                <div class="promo-box bg-dark text-white text-center h-100">
-                    <img src="{{ p.image }}" class="w-100" style="height:120px; object-fit:cover;" alt="Promo">
+                <div class="promo-box text-center h-100 d-flex flex-column justify-content-between">
+                    <img src="{{ p.image }}" class="promo-img" alt="Promo">
                     <div class="p-2">
                         <span class="text-warning fw-bold small"><i class="fas fa-star"></i> {{ p.text }}</span>
                     </div>
@@ -435,7 +456,7 @@ def home():
         <div class="carousel-inner">
             {% for m in top_slider %}
             <div class="carousel-item {% if loop.first %}active{% endif %}">
-                <a href="/movie/{{ m._id }}" onclick="showLoader()">
+                <a href="/movie/{{ m._id }}" onclick="handleMovieClick(event, this.href)">
                     <!-- FIX: aspect-ratio ensures 100% visibility on all devices without crop -->
                     <div style="width: 100%; aspect-ratio: 16/9; max-height: 500px; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat; position: relative;">
                         <div class="carousel-caption text-start px-md-5 pb-md-5">
@@ -466,7 +487,7 @@ def home():
     </div>
     <div class="movie-grid">
         {% for m in sections.get('Movie') %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="handleMovieClick(event, this.href)">
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -496,7 +517,7 @@ def home():
     </div>
     <div class="movie-grid">
         {% for m in sections.get('Series') %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="handleMovieClick(event, this.href)">
             <div class="movie-card" style="border-color: #198754;">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -527,7 +548,7 @@ def home():
     </div>
     <div class="episode-grid">
         {% for ep in latest_episodes %}
-        <a href="/movie/{{ ep.series_id }}" class="text-decoration-none" onclick="showLoader()">
+        <a href="/movie/{{ ep.series_id }}" class="text-decoration-none" onclick="handleMovieClick(event, this.href)">
             <div class="movie-card" style="border-color: #0dcaf0;">
                 <div class="poster-wrapper-landscape">
                     {% if ep.m_badge %}<span class="movie-badge">{{ ep.m_badge }}</span>{% endif %}
@@ -562,7 +583,7 @@ def home():
     </div>
     <div class="movie-grid">
         {% for m in sections.get('Anime') %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="handleMovieClick(event, this.href)">
             <div class="movie-card" style="border-color: #dc3545;">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -589,7 +610,7 @@ def home():
         </div>
         <div class="movie-grid">
             {% for m in sections.get(t) %}
-            <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+            <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="handleMovieClick(event, this.href)">
                 <div class="movie-card" style="border-color: #ffc107;">
                     <div class="poster-wrapper">
                         {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -625,7 +646,7 @@ def search():
     <h3 class="mb-4 border-start border-primary border-4 ps-3">Search Results for: <span class="text-warning">{{ query }}</span></h3>
     <div class="movie-grid">
         {% for m in movies %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="handleMovieClick(event, this.href)">
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
@@ -672,7 +693,7 @@ def category_filter(cat_name):
     <h3 class="mb-4 border-start border-primary border-4 ps-3">Category: <span class="text-warning">{{ cat_name }}</span></h3>
     <div class="movie-grid">
         {% for m in movies %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="handleMovieClick(event, this.href)">
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
