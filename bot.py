@@ -6,6 +6,7 @@ import requests
 import os
 import json
 import time # Added for caching
+import re # Added for TMDB & IMDB URL Parsing
 from urllib.parse import unquote  # %20 URL decoding fix
 
 app = Flask(__name__)
@@ -51,6 +52,9 @@ if not settings_col.find_one({"type": "general"}):
         "ad_banner_detail_desktop": "",
         "ad_banner_detail_mobile": "",
         "ad_banner_popular": "", 
+        "ad_header": "",
+        "ad_middle": "",
+        "ad_footer": "",
         "direct_links": [],
         "notice": "Welcome to our Premium Movie Site!",
         "popup_notice": "Join our Telegram Group!",
@@ -58,10 +62,7 @@ if not settings_col.find_one({"type": "general"}):
         "tmdb_api_key": "",
         "admin_user": "admin",
         "admin_pass": "admin",
-        "limit_movie": "12",
-        "limit_series": "12",
-        "limit_drama": "12",
-        "limit_episode": "12",
+        "limits": {"Movie": "12", "Series": "12", "Drama": "12", "Anime": "12", "Episode": "12"},
         "promos": []
     })
 
@@ -116,12 +117,10 @@ FRONTEND_HTML = """
         @media (min-width: 1200px) { .movie-grid { grid-template-columns: repeat(6, 1fr); } }
         @media (min-width: 1400px) { .movie-grid { grid-template-columns: repeat(7, 1fr); } }
         
-        /* Landscape Episode Grid */
-        .episode-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: 12px; padding: 15px 0; width: 100%; }
-        @media (min-width: 576px) { .episode-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (min-width: 992px) { .episode-grid { grid-template-columns: repeat(3, 1fr); gap: 15px; } }
-        @media (min-width: 1200px) { .episode-grid { grid-template-columns: repeat(4, 1fr); } }
-        @media (min-width: 1500px) { .episode-grid { grid-template-columns: repeat(5, 1fr); } }
+        /* Landscape Episode Grid: STRICTLY 3 ON MOBILE, 6 ON DESKTOP */
+        .episode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 15px 0; width: 100%; }
+        @media (min-width: 576px) { .episode-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; } }
+        @media (min-width: 992px) { .episode-grid { grid-template-columns: repeat(6, 1fr); gap: 15px; } }
 
         .movie-card { background: #1e2738; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; height: 100%; border: 1px solid #2d3748; transition: box-shadow 0.3s ease; }
         .movie-card:hover { box-shadow: 0 8px 15px rgba(0,123,255,0.3); }
@@ -149,7 +148,6 @@ FRONTEND_HTML = """
         .cat-badge { background: #1e2738; color: #fff; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-size: 13px; border: 1px solid #2d3748; white-space: nowrap;}
         .cat-badge:hover { background: #007bff; }
         
-        /* Slider Overlay styles */
         .carousel-caption { background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0.6) 50%, rgba(0,212,255,0) 100%); bottom: 0; left: 0; right: 0; padding-bottom: 20px; }
         
         /* Promo styling */
@@ -195,6 +193,11 @@ FRONTEND_HTML = """
     {% set settings = db.settings.find_one({"type": "general"}) %}
     
     <div class="container-fluid px-3 px-md-5 mt-3">
+        <!-- GLOBAL HEADER AD -->
+        {% if settings.get('ad_header') %}
+            <div class="w-100 text-center mb-3">{{ settings.get('ad_header') | safe }}</div>
+        {% endif %}
+
         {% if settings.get('notice') %}
             <div class="alert alert-info text-center shadow-sm rounded border-primary border-start border-4" style="background:#1e2738; color:#fff;">
                 <i class="fas fa-bell text-warning"></i> {{ settings.get('notice') }}
@@ -223,6 +226,11 @@ FRONTEND_HTML = """
     <!-- MAIN FLUID CONTAINER -->
     <div class="container-fluid px-3 px-md-5 pb-5">
         <!-- CONTENT_BLOCK -->
+        
+        <!-- GLOBAL FOOTER AD -->
+        {% if settings.get('ad_footer') %}
+            <div class="w-100 text-center mt-5 mb-2">{{ settings.get('ad_footer') | safe }}</div>
+        {% endif %}
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -354,22 +362,29 @@ def home():
         return cached_html
 
     settings = settings_col.find_one({"type": "general"}) or {}
-    
-    # Get Limits from admin
-    lim_m = int(settings.get('limit_movie', 12))
-    lim_s = int(settings.get('limit_series', 12))
-    lim_d = int(settings.get('limit_drama', 12))
-    lim_e = int(settings.get('limit_episode', 12))
+    limits = settings.get('limits', {})
     promos = settings.get('promos', [])
     
     top_slider = list(movies_col.find().sort('views', -1).limit(5))
-    movies = list(movies_col.find({"type": "Movie"}).sort('_id', -1).limit(lim_m))
-    series = list(movies_col.find({"type": "Series"}).sort('_id', -1).limit(lim_s))
-    dramas = list(movies_col.find({"type": "Drama"}).sort('_id', -1).limit(lim_d))
     
-    # LATEST EPISODES EXTRACTION (Automated category display)
+    # Auto Dynamic Categories Extraction
+    active_types = movies_col.distinct("type")
+    all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
+    ordered_types = ["Movie", "Series", "Episode", "Anime"]
+    other_types = [t for t in all_types if t not in ordered_types and t != "Episode"]
+    
+    sections = {}
+    for t in all_types:
+        if t != "Episode":
+            lim = int(limits.get(t, 12))
+            items = list(movies_col.find({"type": t}).sort('_id', -1).limit(lim))
+            if items:
+                sections[t] = items
+    
+    # LATEST EPISODES EXTRACTION
+    lim_e = int(limits.get('Episode', 12))
     latest_episodes = []
-    recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama"]}}).sort('_id', -1).limit(20))
+    recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama", "Anime"]}}).sort('_id', -1).limit(20))
     for s_obj in recent_series_dramas:
         for season in reversed(s_obj.get('seasons', [])):
             for ep in reversed(season.get('episodes', [])):
@@ -381,12 +396,9 @@ def home():
                 ep_copy['m_poster'] = s_obj.get('poster')
                 ep_copy['m_badge'] = s_obj.get('badge')
                 latest_episodes.append(ep_copy)
-                if len(latest_episodes) >= lim_e:
-                    break
-            if len(latest_episodes) >= lim_e:
-                break
-        if len(latest_episodes) >= lim_e:
-            break
+                if len(latest_episodes) >= lim_e: break
+            if len(latest_episodes) >= lim_e: break
+        if len(latest_episodes) >= lim_e: break
 
     categories = list(options_col.find({"type": "category"}))
     
@@ -418,14 +430,14 @@ def home():
         {% endfor %}
     </div>
 
-    <!-- TOP MOVIE SLIDER WITH LANDSCAPE POSTER -->
+    <!-- 1. TOP MOVIE SLIDER WITH LANDSCAPE POSTER FIX -->
     <div id="topMoviesCarousel" class="carousel slide mb-4 rounded overflow-hidden shadow-lg border border-secondary" data-bs-ride="carousel">
         <div class="carousel-inner">
             {% for m in top_slider %}
             <div class="carousel-item {% if loop.first %}active{% endif %}">
                 <a href="/movie/{{ m._id }}" onclick="showLoader()">
-                    <!-- SLIDER Uses BACKDROP (Landscape) fallback to Poster -->
-                    <div style="height: 45vh; min-height: 300px; width: 100%; background: url('{{ m.backdrop or m.poster }}') center/cover; position: relative;">
+                    <!-- FIX: aspect-ratio ensures 100% visibility on all devices without crop -->
+                    <div style="width: 100%; aspect-ratio: 16/9; max-height: 500px; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat; position: relative;">
                         <div class="carousel-caption text-start px-md-5 pb-md-5">
                             <h2 class="fw-bold text-white shadow-sm" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">{{ m.title }}</h2>
                             <span class="badge bg-danger px-3 py-2 fs-6">{{ m.type }}</span>
@@ -443,49 +455,17 @@ def home():
             <span class="carousel-control-next-icon" aria-hidden="true" style="width: 3rem; height: 3rem;"></span>
         </button>
     </div>
-
-    <!-- LATEST EPISODES SECTION (NEW FEATURE) -->
-    {% if latest_episodes %}
-    <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-info border-4 ps-3">
-        <h3 class="fw-bold text-uppercase m-0 text-info">Latest Episodes</h3>
-    </div>
-    <div class="episode-grid">
-        {% for ep in latest_episodes %}
-        <a href="/movie/{{ ep.series_id }}" class="text-decoration-none" onclick="showLoader()">
-            <div class="movie-card" style="border-color: #0dcaf0;">
-                <div class="poster-wrapper-landscape">
-                    {% if ep.m_badge %}<span class="movie-badge">{{ ep.m_badge }}</span>{% endif %}
-                    <span class="movie-quality bg-info text-dark shadow-sm">S{{ "%02d"|format(ep.season_num|int) }} E{{ "%02d"|format(ep.episode|int) }}</span>
-                    <!-- EPISODE POSTER Fallback sequence -->
-                    <img src="{{ ep.poster or ep.m_backdrop or ep.m_poster }}" alt="Episode" class="movie-poster" onerror="this.src='https://via.placeholder.com/600x337?text=No+Poster'">
-                </div>
-                <div class="movie-info text-start p-3">
-                    <div class="movie-title fs-5 mb-1 text-info">{{ ep.series_title }}</div>
-                    <div class="movie-meta justify-content-start">
-                        <span class="text-light fw-bold fs-6">
-                            {% if ep.ep_title %}
-                                {{ ep.ep_title }}
-                            {% else %}
-                                Season {{ "%02d"|format(ep.season_num|int) }} Ep {{ "%02d"|format(ep.episode|int) }}
-                            {% endif %}
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
+    
     """ + promo_html + """
-    {% endif %}
 
-    <!-- MOVIES SECTION (PORTRAIT POSTERS IN GRID) -->
-    {% if movies %}
+    <!-- 2. MOVIES SECTION -->
+    {% if sections.get('Movie') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-primary border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-primary">Latest Movies</h3>
         <a href="/category/Movie" class="btn btn-outline-primary fw-bold px-4">View All</a>
     </div>
     <div class="movie-grid">
-        {% for m in movies %}
+        {% for m in sections.get('Movie') %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
             <div class="movie-card">
                 <div class="poster-wrapper">
@@ -508,14 +488,14 @@ def home():
     """ + promo_html + """
     {% endif %}
 
-    <!-- SERIES SECTION -->
-    {% if series %}
+    <!-- 3. SERIES SECTION -->
+    {% if sections.get('Series') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-success border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-success">Latest Series</h3>
         <a href="/category/Series" class="btn btn-outline-success fw-bold px-4">View All</a>
     </div>
     <div class="movie-grid">
-        {% for m in series %}
+        {% for m in sections.get('Series') %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
             <div class="movie-card" style="border-color: #198754;">
                 <div class="poster-wrapper">
@@ -535,24 +515,37 @@ def home():
     """ + promo_html + """
     {% endif %}
 
-    <!-- DRAMA SECTION -->
-    {% if dramas %}
-    <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-warning border-4 ps-3">
-        <h3 class="fw-bold text-uppercase m-0 text-warning">Latest Drama</h3>
-        <a href="/category/Drama" class="btn btn-outline-warning fw-bold px-4">View All</a>
+    <!-- GLOBAL MIDDLE AD -->
+    {% if settings.get('ad_middle') %}
+        <div class="w-100 text-center my-4">{{ settings.get('ad_middle') | safe }}</div>
+    {% endif %}
+
+    <!-- 4. LATEST EPISODES SECTION (3 IN LINE ON MOBILE) -->
+    {% if latest_episodes %}
+    <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-info border-4 ps-3">
+        <h3 class="fw-bold text-uppercase m-0 text-info">Latest Episodes</h3>
     </div>
-    <div class="movie-grid">
-        {% for m in dramas %}
-        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
-            <div class="movie-card" style="border-color: #ffc107;">
-                <div class="poster-wrapper">
-                    {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                    <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
-                    <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+    <div class="episode-grid">
+        {% for ep in latest_episodes %}
+        <a href="/movie/{{ ep.series_id }}" class="text-decoration-none" onclick="showLoader()">
+            <div class="movie-card" style="border-color: #0dcaf0;">
+                <div class="poster-wrapper-landscape">
+                    {% if ep.m_badge %}<span class="movie-badge">{{ ep.m_badge }}</span>{% endif %}
+                    <!-- EPISODE POSTER Fallback sequence -->
+                    <img src="{{ ep.poster or ep.m_backdrop or ep.m_poster }}" alt="Episode" class="movie-poster" onerror="this.src='https://via.placeholder.com/600x337?text=No+Poster'">
                 </div>
-                <div class="movie-info">
-                    <div class="movie-title fs-6">{{ m.title }}</div>
-                    <div class="movie-meta"><span class="text-warning fw-bold">{{ m.type }}</span></div>
+                <!-- Small padding for mobile fit -->
+                <div class="movie-info text-start p-2 p-md-3">
+                    <div class="movie-title fw-bold text-info mb-1" style="font-size: 11px;">{{ ep.series_title }}</div>
+                    <div class="movie-meta justify-content-start">
+                        <span class="text-light fw-bold" style="font-size: 10px;">
+                            {% if ep.ep_title %}
+                                {{ ep.ep_title }} (S{{ "%02d"|format(ep.season_num|int) }} E{{ "%02d"|format(ep.episode|int) }})
+                            {% else %}
+                                Season {{ "%02d"|format(ep.season_num|int) }} Ep {{ "%02d"|format(ep.episode|int) }}
+                            {% endif %}
+                        </span>
+                    </div>
                 </div>
             </div>
         </a>
@@ -561,12 +554,66 @@ def home():
     """ + promo_html + """
     {% endif %}
     
-    {% if not movies and not series and not dramas and not latest_episodes %}
+    <!-- 5. ANIME SECTION -->
+    {% if sections.get('Anime') %}
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-danger border-4 ps-3">
+        <h3 class="fw-bold text-uppercase m-0 text-danger">Latest Anime</h3>
+        <a href="/category/Anime" class="btn btn-outline-danger fw-bold px-4">View All</a>
+    </div>
+    <div class="movie-grid">
+        {% for m in sections.get('Anime') %}
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+            <div class="movie-card" style="border-color: #dc3545;">
+                <div class="poster-wrapper">
+                    {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                    <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                    <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                </div>
+                <div class="movie-info">
+                    <div class="movie-title fs-6">{{ m.title }}</div>
+                    <div class="movie-meta"><span class="text-danger fw-bold">{{ m.type }}</span></div>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    """ + promo_html + """
+    {% endif %}
+    
+    <!-- 6. ALL OTHER DYNAMIC SECTIONS (Drama, etc) -->
+    {% for t in other_types %}
+        {% if sections.get(t) %}
+        <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-warning border-4 ps-3">
+            <h3 class="fw-bold text-uppercase m-0 text-warning">Latest {{ t }}</h3>
+            <a href="/category/{{ t }}" class="btn btn-outline-warning fw-bold px-4">View All</a>
+        </div>
+        <div class="movie-grid">
+            {% for m in sections.get(t) %}
+            <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+                <div class="movie-card" style="border-color: #ffc107;">
+                    <div class="poster-wrapper">
+                        {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                        <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                        <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                    </div>
+                    <div class="movie-info">
+                        <div class="movie-title fs-6">{{ m.title }}</div>
+                        <div class="movie-meta"><span class="text-warning fw-bold">{{ m.type }}</span></div>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        """ + promo_html + """
+        {% endif %}
+    {% endfor %}
+    
+    {% if not sections and not latest_episodes %}
         <div class="alert alert-secondary text-center mt-5 fs-4">কোনো পোস্ট পাওয়া যায়নি!</div>
     {% endif %}
     """)
     
-    rendered_html = render_template_string(html, top_slider=top_slider, movies=movies, series=series, dramas=dramas, latest_episodes=latest_episodes, categories=categories, db=db, page_name='home', promos=promos)
+    rendered_html = render_template_string(html, top_slider=top_slider, sections=sections, latest_episodes=latest_episodes, other_types=other_types, categories=categories, db=db, page_name='home', promos=promos, settings=settings)
     set_cached_data('home_page', rendered_html) # Save to Cache
     return rendered_html
 
@@ -600,12 +647,16 @@ def search():
     </div>
     {% if not movies %}<h4 class="text-center text-muted mt-5">No results found!</h4>{% endif %}
     """)
-    return render_template_string(html, movies=movies, query=query, db=db, page_name='search')
+    return render_template_string(html, movies=movies, query=query, db=db, page_name='search', settings=settings_col.find_one({"type": "general"}))
 
 @app.route('/category/<cat_name>')
 def category_filter(cat_name):
     cat_name = unquote(cat_name) # Fix URL Encoding (%20 to space)
-    if cat_name in ['Movie', 'Series', 'Drama']:
+    # Check if type exists
+    active_types = db.movies.distinct("type")
+    all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
+    
+    if cat_name in all_types:
         movies = list(movies_col.find({"type": cat_name}).sort('_id', -1))
     else:
         movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
@@ -642,7 +693,7 @@ def category_filter(cat_name):
         {% endfor %}
     </div>
     """)
-    return render_template_string(html, movies=movies, cat_name=cat_name, categories=categories, db=db, page_name='category')
+    return render_template_string(html, movies=movies, cat_name=cat_name, categories=categories, db=db, page_name='category', settings=settings_col.find_one({"type": "general"}))
 
 @app.route('/movie/<id>')
 def movie_details(id):
@@ -651,11 +702,11 @@ def movie_details(id):
     
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="row mt-3">
-        <!-- FULL WIDTH LANDSCAPE BANNER HEADER -->
+        <!-- FULL WIDTH LANDSCAPE BANNER HEADER FIX -->
         <div class="col-12 mb-5">
-            <div class="position-relative w-100 shadow-lg border border-secondary" style="height: 50vh; min-height: 400px; border-radius: 12px; overflow: hidden;">
-                <img src="{{ m.backdrop or m.poster }}" class="w-100 h-100" style="object-fit: cover; filter: brightness(0.55);" alt="Banner Backdrop" onerror="this.src='{{ m.poster }}'">
-                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0) 100%); height: 300px;"></div>
+            <div class="position-relative w-100 shadow-lg border border-secondary" style="aspect-ratio: 16/9; max-height: 60vh; border-radius: 12px; overflow: hidden; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat;">
+                <!-- Gradient Overlay -->
+                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0.7) 40%, rgba(11,15,25,0) 100%); height: 100%;"></div>
                 
                 {% if m.badge %}<span class="movie-badge shadow-lg" style="font-size: 18px; padding: 8px 25px; top: 20px; right: 20px;">{{ m.badge }}</span>{% endif %}
                 
@@ -803,7 +854,7 @@ def movie_details(id):
         </div>
     </div>
     """)
-    return render_template_string(html, m=movie, db=db, page_name='detail')
+    return render_template_string(html, m=movie, db=db, page_name='detail', settings=settings_col.find_one({"type": "general"}))
 
 # ==========================================
 # ADMIN AUTHENTICATION
@@ -898,6 +949,10 @@ def admin_dashboard():
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @login_required
 def admin_settings():
+    # Fetch all active types for dynamic limits
+    active_types = movies_col.distinct("type")
+    all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
+
     if request.method == 'POST':
         clear_cache()
 
@@ -909,6 +964,11 @@ def admin_settings():
         p_urls = request.form.getlist('promo_url[]')
         promos = [{"text": t, "image": i, "url": u} for t, i, u in zip(p_texts, p_images, p_urls) if t and u]
         
+        # Save Dynamic Limits
+        limits = {"Episode": request.form.get('limit_Episode', '12')}
+        for t in all_types:
+            limits[t] = request.form.get(f"limit_{t}", "12")
+        
         settings_col.update_one({"type": "general"}, {"$set": {
             "ad_status_banner": request.form.get('ad_status_banner'),
             "ad_status_direct": request.form.get('ad_status_direct'),
@@ -917,6 +977,9 @@ def admin_settings():
             "ad_banner_detail_desktop": request.form.get('ad_banner_detail_desktop'),
             "ad_banner_detail_mobile": request.form.get('ad_banner_detail_mobile'),
             "ad_banner_popular": request.form.get('ad_banner_popular'),
+            "ad_header": request.form.get('ad_header'),
+            "ad_middle": request.form.get('ad_middle'),
+            "ad_footer": request.form.get('ad_footer'),
             "direct_links": d_links,
             "telegram_link": request.form.get('telegram_link'),
             "notice": request.form.get('notice'),
@@ -924,10 +987,7 @@ def admin_settings():
             "tmdb_api_key": request.form.get('tmdb_api_key'),
             "admin_user": request.form.get('admin_user'),
             "admin_pass": request.form.get('admin_pass'),
-            "limit_movie": request.form.get('limit_movie', '12'),
-            "limit_series": request.form.get('limit_series', '12'),
-            "limit_drama": request.form.get('limit_drama', '12'),
-            "limit_episode": request.form.get('limit_episode', '12'),
+            "limits": limits,
             "promos": promos
         }})
         flash("সেটিংস এবং অ্যাডস সফলভাবে আপডেট হয়েছে!")
@@ -941,24 +1001,19 @@ def admin_settings():
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল (Advanced)</h2>
     <form method="POST" class="card p-4">
         
-        <h5 class="text-danger border-bottom border-secondary pb-2"><i class="fas fa-layer-group"></i> Homepage Category Post Limits</h5>
+        <!-- AUTO DYNAMIC CATEGORY LIMITS -->
+        <h5 class="text-danger border-bottom border-secondary pb-2"><i class="fas fa-layer-group"></i> Homepage Category Post Limits (Auto Generated)</h5>
         <div class="row mb-4 bg-dark p-3 rounded border border-secondary">
             <div class="col-md-3 mb-2">
-                <label class="text-white">Episodes Section</label>
-                <input type="number" name="limit_episode" class="form-control" value="{{ s.get('limit_episode', '12') }}" min="1">
+                <label class="text-white fw-bold">Episodes Section</label>
+                <input type="number" name="limit_Episode" class="form-control border-danger" value="{{ s.get('limits', {}).get('Episode', '12') }}" min="1">
             </div>
+            {% for t in all_types %}
             <div class="col-md-3 mb-2">
-                <label class="text-white">Movie Section Limit</label>
-                <input type="number" name="limit_movie" class="form-control" value="{{ s.get('limit_movie', '12') }}" min="1">
+                <label class="text-white">{{ t }} Section Limit</label>
+                <input type="number" name="limit_{{ t }}" class="form-control" value="{{ s.get('limits', {}).get(t, '12') }}" min="1">
             </div>
-            <div class="col-md-3 mb-2">
-                <label class="text-white">Series Section Limit</label>
-                <input type="number" name="limit_series" class="form-control" value="{{ s.get('limit_series', '12') }}" min="1">
-            </div>
-            <div class="col-md-3 mb-2">
-                <label class="text-white">Drama Section Limit</label>
-                <input type="number" name="limit_drama" class="form-control" value="{{ s.get('limit_drama', '12') }}" min="1">
-            </div>
+            {% endfor %}
         </div>
 
         <h5 class="text-warning border-bottom border-secondary pb-2"><i class="fas fa-money-bill-wave"></i> Unlimited Promote & Income System (Home Page)</h5>
@@ -976,6 +1031,22 @@ def admin_settings():
                     {% endfor %}
                 </div>
                 <button type="button" class="btn btn-outline-warning mt-2 fw-bold w-100" onclick="addPromo()"><i class="fas fa-plus"></i> Add New Promo</button>
+            </div>
+        </div>
+        
+        <h5 class="text-primary border-bottom border-secondary pb-2"><i class="fas fa-ad"></i> Global Ads (Header, Middle, Footer)</h5>
+        <div class="row mb-4 bg-dark p-3 rounded border border-primary">
+            <div class="col-md-12 mb-3">
+                <label class="text-white"><i class="fas fa-arrow-up"></i> Header Ad (Show at Top)</label>
+                <textarea name="ad_header" class="form-control" rows="3" placeholder="HTML Code for Top Ad">{{ s.get('ad_header', '') }}</textarea>
+            </div>
+            <div class="col-md-12 mb-3">
+                <label class="text-white"><i class="fas fa-arrows-alt-v"></i> Middle Ad (Show in Center)</label>
+                <textarea name="ad_middle" class="form-control" rows="3" placeholder="HTML Code for Middle Ad">{{ s.get('ad_middle', '') }}</textarea>
+            </div>
+            <div class="col-md-12 mb-3">
+                <label class="text-white"><i class="fas fa-arrow-down"></i> Footer Ad (Show at Bottom)</label>
+                <textarea name="ad_footer" class="form-control" rows="3" placeholder="HTML Code for Bottom Ad">{{ s.get('ad_footer', '') }}</textarea>
             </div>
         </div>
 
@@ -1072,7 +1143,7 @@ def admin_settings():
         }
     </script>
     """)
-    return render_template_string(html, s=s)
+    return render_template_string(html, s=s, all_types=all_types)
 
 @app.route('/admin/options', methods=['GET', 'POST'])
 @login_required
@@ -1183,12 +1254,16 @@ def tmdb_search():
 def add_movie():
     settings = settings_col.find_one({"type": "general"})
     
+    # Auto Dynamic Types For Manual Entry
+    active_types = movies_col.distinct("type")
+    all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
+    
     if request.method == 'POST':
         clear_cache() # Clear cache on new post
         action = request.form.get('action')
         
         if action == 'fetch_tmdb':
-            tmdb_id = request.form.get('tmdb_id')
+            tmdb_input = request.form.get('tmdb_id').strip()
             m_type = request.form.get('fetch_type')
             api_key = settings.get('tmdb_api_key')
             
@@ -1196,7 +1271,33 @@ def add_movie():
                 flash("Error: TMDB API Key সেটিংসে দেওয়া নেই!")
                 return redirect(url_for('add_movie'))
             
-            url = f"https://api.themoviedb.org/3/{m_type}/{tmdb_id}?api_key={api_key}&language=en-US"
+            # --- TMDB & IMDB URL PARSER LOGIC ---
+            imdb_match = re.search(r'(tt\d+)', tmdb_input)
+            tmdb_match = re.search(r'themoviedb\.org/(movie|tv)/(\d+)', tmdb_input)
+            
+            if imdb_match:
+                imdb_id = imdb_match.group(1)
+                find_url = f"https://api.themoviedb.org/3/find/{imdb_id}?api_key={api_key}&external_source=imdb_id"
+                try:
+                    res = requests.get(find_url).json()
+                    if res.get('movie_results'):
+                        tmdb_input = str(res['movie_results'][0]['id'])
+                        m_type = 'movie'
+                    elif res.get('tv_results'):
+                        tmdb_input = str(res['tv_results'][0]['id'])
+                        m_type = 'tv'
+                    else:
+                        flash("Error: IMDB ID দিয়ে TMDB তে ডাটা পাওয়া যায়নি!")
+                        return redirect(url_for('add_movie'))
+                except Exception as e:
+                    flash(f"Error checking IMDB: {str(e)}")
+                    return redirect(url_for('add_movie'))
+            elif tmdb_match:
+                m_type = tmdb_match.group(1)
+                tmdb_input = tmdb_match.group(2)
+            # ------------------------------------
+            
+            url = f"https://api.themoviedb.org/3/{m_type}/{tmdb_input}?api_key={api_key}&language=en-US"
             try:
                 res = requests.get(url).json()
                 if 'id' not in res:
@@ -1232,11 +1333,11 @@ def add_movie():
                             episodes = []
                             # Fetch Extra Season Details for Episode Posters and Names
                             try:
-                                s_res = requests.get(f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{s_num}?api_key={api_key}").json()
+                                s_res = requests.get(f"https://api.themoviedb.org/3/tv/{tmdb_input}/season/{s_num}?api_key={api_key}").json()
                                 for e_data in s_res.get('episodes', []):
                                     e_num = e_data.get('episode_number')
                                     e_still = e_data.get('still_path')
-                                    e_title = e_data.get('name', '') # Extra: Episode Name
+                                    e_title = e_data.get('name', '')
                                     ep_poster = f"https://image.tmdb.org/t/p/w500{e_still}" if e_still else ""
                                     episodes.append({"episode": e_num, "ep_title": e_title, "poster": ep_poster, "links": []})
                             except:
@@ -1272,7 +1373,7 @@ def add_movie():
                 "links": links
             }
             
-            if m_type in ['Series', 'Drama']:
+            if m_type not in ['Movie']:
                 new_doc['seasons'] = [{"season": 1, "episodes": [{"episode": 1, "ep_title": "", "poster": "", "links": links}]}]
                 new_doc['links'] = []
                 
@@ -1304,17 +1405,17 @@ def add_movie():
         </form>
     </div>
 
-    <!-- TMDB MANUAL ID IMPORT -->
+    <!-- TMDB / IMDB MANUAL LINK IMPORT -->
     <div class="card p-4 mb-4 border-info shadow">
-        <h4 class="text-info fw-bold mb-3"><i class="fas fa-hashtag"></i> TMDB ID দিয়ে ইম্পোর্ট</h4>
+        <h4 class="text-info fw-bold mb-3"><i class="fas fa-hashtag"></i> TMDB বা IMDB লিংক দিয়ে ইম্পোর্ট</h4>
         <form method="POST" class="row align-items-end">
             <input type="hidden" name="action" value="fetch_tmdb">
             <div class="col-md-5 mb-2">
-                <label>TMDB ID</label>
-                <input type="text" name="tmdb_id" class="form-control" required placeholder="Ex: 299534">
+                <label>TMDB ID / TMDB URL / IMDB URL</label>
+                <input type="text" name="tmdb_id" class="form-control" required placeholder="Paste full link or ID here">
             </div>
             <div class="col-md-4 mb-2">
-                <label>Type</label>
+                <label>Type (শুধু ID দিলে সিলেক্ট করুন)</label>
                 <select name="fetch_type" class="form-select">
                     <option value="movie">Movie</option>
                     <option value="tv">TV Series / Drama</option>
@@ -1334,9 +1435,11 @@ def add_movie():
             <div class="row">
                 <div class="col-md-6 mb-3"><label>Title</label><input type="text" name="title" class="form-control" required></div>
                 <div class="col-md-3 mb-3">
-                    <label>Type</label>
+                    <label>Type (ডাইনামিক)</label>
                     <select name="type" class="form-select">
-                        <option value="Movie">Movie</option><option value="Series">Series</option><option value="Drama">Drama</option>
+                        {% for t in all_types %}
+                            <option value="{{ t }}">{{ t }}</option>
+                        {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-3 mb-3"><label>Badge</label><select name="badge" class="form-select"><option value="">No Badge</option>{% for b in badges %}<option value="{{b.value}}">{{b.value}}</option>{% endfor %}</select></div>
@@ -1444,7 +1547,7 @@ def add_movie():
         });
     </script>
     """)
-    return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names, db=db)
+    return render_template_string(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names, all_types=all_types, db=db)
 
 @app.route('/admin/edit_movie/<id>', methods=['GET', 'POST'])
 @login_required
