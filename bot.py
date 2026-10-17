@@ -58,10 +58,10 @@ if not settings_col.find_one({"type": "general"}):
         "tmdb_api_key": "",
         "admin_user": "admin",
         "admin_pass": "admin",
-        "limit_movie": "10",      # New Setting
-        "limit_series": "10",     # New Setting
-        "limit_drama": "10",      # New Setting
-        "promos": []              # New Setting for Ads/Income
+        "limit_movie": "10",
+        "limit_series": "10",
+        "limit_drama": "10",
+        "promos": []
     })
 
 # ==========================================
@@ -83,7 +83,6 @@ FRONTEND_HTML = """
 <html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <!-- ZOOM LOCK ADDED HERE -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DooPlay Pro - Movie Site</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -113,8 +112,8 @@ FRONTEND_HTML = """
         .movie-title { font-size: 14px; font-weight: 600; color: #e2e8f0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; margin-bottom: 6px; }
         .movie-meta { font-size: 11px; color: #8c98a4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; }
         
-        .episodes-grid { display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; overflow-x: hidden; padding-right: 5px; padding-bottom: 12px; scrollbar-width: thin; }
-        .ep-box { background: #151b2b; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff; width: 100%; display: flex; flex-direction: column; justify-content: start; border: 1px solid #1e2738; }
+        .episodes-grid { display: flex; flex-direction: column; gap: 10px; max-height: 500px; overflow-y: auto; overflow-x: hidden; padding-right: 5px; padding-bottom: 12px; scrollbar-width: thin; }
+        .ep-box { background: #151b2b; padding: 10px; border-radius: 8px; border-left: 4px solid #007bff; width: 100%; display: flex; flex-direction: column; justify-content: start; border: 1px solid #1e2738; }
         
         .nav-pills .nav-link { background: #1e2738; color: #fff; border: 1px solid #2d3748; padding: 8px 20px; }
         .nav-pills .nav-link.active { background: #007bff; color: #fff; border-color: #007bff; box-shadow: 0 4px 6px rgba(0,123,255,0.3); }
@@ -212,22 +211,14 @@ FRONTEND_HTML = """
         let adClickIndex = parseInt(localStorage.getItem('dooplay_ad_index')) || 0;
 
         function checkAd(event, url) {
-            // Check if Direct Ads are ON and links exist
             if(adStatusDirect === 'on' && directLinks.length > 0) {
                 event.preventDefault();
-                
-                // Get the current link and switch for next time
                 let clickUrl = directLinks[adClickIndex % directLinks.length];
                 adClickIndex++;
                 localStorage.setItem('dooplay_ad_index', adClickIndex);
-                
-                // Open the ad in a new tab
                 window.open(clickUrl, '_blank');
-                
-                // Redirect to actual movie/download in the current tab
                 setTimeout(() => { window.location.href = url; }, 500);
             }
-            // If Ads are OFF, it will just normally follow the href attribute automatically.
         }
 
         // Show Loader Function
@@ -364,13 +355,14 @@ def home():
         {% endfor %}
     </div>
 
-    <!-- TOP MOVIE SLIDER -->
+    <!-- TOP MOVIE SLIDER WITH LANDSCAPE POSTER -->
     <div id="topMoviesCarousel" class="carousel slide mb-4 rounded overflow-hidden shadow-lg border border-secondary" data-bs-ride="carousel">
         <div class="carousel-inner">
             {% for m in top_slider %}
             <div class="carousel-item {% if loop.first %}active{% endif %}">
                 <a href="/movie/{{ m._id }}" onclick="showLoader()">
-                    <div style="height: 300px; width: 100%; background: url('{{ m.poster }}') center/cover; position: relative;">
+                    <!-- SLIDER Uses BACKDROP (Landscape) fallback to Poster -->
+                    <div style="height: 300px; width: 100%; background: url('{{ m.backdrop or m.poster }}') center/cover; position: relative;">
                         <div class="carousel-caption text-start">
                             <h3 class="fw-bold text-white shadow-sm">{{ m.title }}</h3>
                             <span class="badge bg-danger">{{ m.type }}</span>
@@ -389,7 +381,7 @@ def home():
         </button>
     </div>
 
-    <!-- MOVIES SECTION -->
+    <!-- MOVIES SECTION (PORTRAIT POSTERS IN GRID) -->
     {% if movies %}
     <div class="d-flex justify-content-between align-items-center mb-3 border-start border-primary border-4 ps-2">
         <h4 class="fw-bold text-uppercase m-0">Latest Movies</h4>
@@ -403,6 +395,7 @@ def home():
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
                     {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
                     <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                    <!-- Uses normal portrait poster in Home Grid -->
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
                 <div class="movie-info">
@@ -516,7 +509,6 @@ def search():
 @app.route('/category/<cat_name>')
 def category_filter(cat_name):
     cat_name = unquote(cat_name) # Fix URL Encoding (%20 to space)
-    # Allow searching by type (Movie, Series, Drama) as well
     if cat_name in ['Movie', 'Series', 'Drama']:
         movies = list(movies_col.find({"type": cat_name}).sort('_id', -1))
     else:
@@ -562,34 +554,39 @@ def movie_details(id):
     movie = movies_col.find_one({"_id": ObjectId(id)})
     
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <div class="row mt-4">
-        <div class="col-md-3 col-lg-3 text-center mb-4">
-            <div class="position-relative d-inline-block w-100">
-                <img src="{{ m.poster }}" class="img-fluid rounded shadow-lg w-100 border border-secondary" alt="Poster" style="max-height: 450px; object-fit: cover;">
-                {% if m.badge %}<span class="movie-badge" style="font-size: 14px; padding: 5px 15px;">{{ m.badge }}</span>{% endif %}
+    <div class="row mt-3">
+        <!-- FULL WIDTH LANDSCAPE BANNER HEADER -->
+        <div class="col-12 mb-4">
+            <div class="position-relative w-100 shadow-lg border border-secondary" style="height: 350px; border-radius: 12px; overflow: hidden;">
+                <img src="{{ m.backdrop or m.poster }}" class="w-100 h-100" style="object-fit: cover; filter: brightness(0.6);" alt="Banner Backdrop" onerror="this.src='{{ m.poster }}'">
+                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0) 100%); height: 250px;"></div>
+                
+                {% if m.badge %}<span class="movie-badge shadow" style="font-size: 16px; padding: 6px 20px; top: 15px; right: 15px;">{{ m.badge }}</span>{% endif %}
+                
+                <div style="position: absolute; bottom: 20px; left: 20px; right: 20px;">
+                    <h1 class="fw-bold text-white mb-3" style="text-shadow: 2px 2px 5px #000; font-size: 28px;">{{ m.title }}</h1>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="badge bg-danger fs-6 shadow-sm"><i class="fas fa-video"></i> {{ m.type }}</span>
+                        {% if m.date %}<span class="badge bg-info text-dark fs-6 shadow-sm"><i class="far fa-calendar-alt"></i> {{ m.date[:4] }}</span>{% endif %}
+                        {% if m.quality %}<span class="badge bg-primary fs-6 shadow-sm">{{ m.quality }}</span>{% endif %}
+                        {% if m.language %}<span class="badge bg-success fs-6 shadow-sm"><i class="fas fa-language"></i> {{ m.language }}</span>{% endif %}
+                        {% for cat in m.categories %}
+                            <span class="badge bg-secondary fs-6 shadow-sm">{{ cat }}</span>
+                        {% endfor %}
+                        <span class="badge bg-dark border border-secondary fs-6 shadow-sm"><i class="fas fa-eye text-primary"></i> Views: {{ m.views }}</span>
+                    </div>
+                </div>
             </div>
-            <div class="mt-3 text-muted"><i class="fas fa-eye text-primary"></i> Total Views: {{ m.views }}</div>
         </div>
         
-        <div class="col-md-9 col-lg-9">
-            <h1 class="fw-bold text-white mb-3">{{ m.title }}</h1>
-            <div class="mb-3 d-flex flex-wrap gap-2">
-                <span class="badge bg-danger fs-6"><i class="fas fa-video"></i> {{ m.type }}</span>
-                {% if m.date %}<span class="badge bg-info text-dark fs-6"><i class="far fa-calendar-alt"></i> {{ m.date[:4] }}</span>{% endif %}
-                {% if m.quality %}<span class="badge bg-primary fs-6">{{ m.quality }}</span>{% endif %}
-                {% if m.language %}<span class="badge bg-success fs-6"><i class="fas fa-language"></i> {{ m.language }}</span>{% endif %}
-                {% for cat in m.categories %}
-                    <span class="badge bg-secondary fs-6">{{ cat }}</span>
-                {% endfor %}
-            </div>
-            
-            <p class="text-light" style="font-size: 15px; line-height: 1.6; opacity: 0.9;">{{ m.description }}</p>
-            <hr class="border-secondary">
+        <div class="col-12">
+            <p class="text-light p-3 rounded shadow-sm" style="background: #151b2b; font-size: 15px; line-height: 1.7; border-left: 4px solid #007bff; border-bottom: 1px solid #2d3748; border-right: 1px solid #2d3748; border-top: 1px solid #2d3748;">{{ m.description }}</p>
+            <hr class="border-secondary my-4">
             
             {% if m.type == 'Movie' %}
                 <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Download & Watch Links</h4>
                 
-                <div class="d-flex flex-column gap-3"> <!-- Grouped and Vertically Stacked Links -->
+                <div class="d-flex flex-column gap-3">
                     {% if m.links %}
                         {% for group_name, items in m.links|groupby('name') %}
                         <div class="link-group border border-secondary rounded bg-dark p-2">
@@ -622,7 +619,7 @@ def movie_details(id):
                 <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Seasons & Episodes</h4>
                 
                 <!-- Vertical Scroll for Seasons -->
-                <div class="p-2 border border-secondary rounded mb-3" style="background:#151b2b; max-height: 250px; overflow-y: auto; scrollbar-width: thin;">
+                <div class="p-2 border border-secondary rounded mb-3 shadow-sm" style="background:#151b2b; max-height: 250px; overflow-y: auto; scrollbar-width: thin;">
                     <ul class="nav nav-pills flex-column gap-2" id="seasonTabs" role="tablist">
                         {% for s in m.seasons %}
                         <li class="nav-item" role="presentation">
@@ -642,10 +639,14 @@ def movie_details(id):
                         <div class="episodes-grid">
                             {% for ep in s.episodes %}
                                 <div class="ep-box">
-                                    <button class="btn btn-outline-primary btn-sm w-100 text-start fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
-                                        <!-- FIXED EPISODE TEXT: Shows Season and Episode -->
-                                        <span class="fs-6"><i class="fas fa-tv me-1"></i> Season {{ "%02d"|format(s.season|int) }} - Episode {{ "%02d"|format(ep.episode|int) }}</span> 
-                                        <i class="fas fa-chevron-down"></i>
+                                    <!-- EPISODE POSTER INCLUDED HERE -->
+                                    <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-2" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
+                                        <div class="d-flex align-items-center gap-3">
+                                            <!-- Thumb Image: Episode Poster fallback to main backdrop fallback to portrait -->
+                                            <img src="{{ ep.poster or m.backdrop or m.poster }}" style="width: 75px; height: 42px; object-fit: cover; border-radius: 4px; border: 1px solid #2d3748;" onerror="this.src='{{ m.backdrop or m.poster }}'">
+                                            <span class="fs-6"><i class="fas fa-tv me-1"></i> Season {{ "%02d"|format(s.season|int) }} - Episode {{ "%02d"|format(ep.episode|int) }}</span> 
+                                        </div>
+                                        <i class="fas fa-chevron-down ms-2"></i>
                                     </button>
                                     
                                     <div id="links_S{{s.season}}_E{{ep.episode}}" class="collapse mt-2">
@@ -1075,7 +1076,11 @@ def add_movie():
                 
                 title = res.get('title') if m_type == 'movie' else res.get('name')
                 date = res.get('release_date') if m_type == 'movie' else res.get('first_air_date')
+                
                 poster = f"https://image.tmdb.org/t/p/w500{res.get('poster_path')}" if res.get('poster_path') else ""
+                # Added Backdrop Import
+                backdrop = f"https://image.tmdb.org/t/p/w780{res.get('backdrop_path')}" if res.get('backdrop_path') else poster
+                
                 desc = res.get('overview', '')
                 
                 genres = [g['name'] for g in res.get('genres', [])]
@@ -1085,7 +1090,7 @@ def add_movie():
                 
                 new_doc = {
                     "title": title, "type": "Movie" if m_type == 'movie' else "Series",
-                    "poster": poster, "description": desc, "date": date,
+                    "poster": poster, "backdrop": backdrop, "description": desc, "date": date,
                     "badge": "", "quality": "", "language": "English",
                     "categories": genres, "views": 0,
                     "links": []
@@ -1096,7 +1101,19 @@ def add_movie():
                     for s in res.get('seasons', []):
                         s_num = s.get('season_number')
                         if s_num > 0:
-                            episodes = [{"episode": e, "links": []} for e in range(1, s.get('episode_count') + 1)]
+                            episodes = []
+                            # Fetch Extra Season Details for Episode Posters
+                            try:
+                                s_res = requests.get(f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{s_num}?api_key={api_key}").json()
+                                for e_data in s_res.get('episodes', []):
+                                    e_num = e_data.get('episode_number')
+                                    e_still = e_data.get('still_path')
+                                    # Episode Thumbnail Poster
+                                    ep_poster = f"https://image.tmdb.org/t/p/w500{e_still}" if e_still else ""
+                                    episodes.append({"episode": e_num, "poster": ep_poster, "links": []})
+                            except:
+                                episodes = [{"episode": e, "poster": "", "links": []} for e in range(1, s.get('episode_count') + 1)]
+                                
                             seasons.append({"season": s_num, "episodes": episodes})
                     new_doc['seasons'] = seasons
                 
@@ -1116,8 +1133,11 @@ def add_movie():
             link_urls = request.form.getlist('link_url[]')
             links = [{"name": n, "quality": q, "url": u} for n, q, u in zip(link_names, link_quals, link_urls) if n and u]
             
+            poster = request.form.get('poster')
+            backdrop = request.form.get('backdrop', poster) # fallback
+            
             new_doc = {
-                "title": title, "type": m_type, "poster": request.form.get('poster'),
+                "title": title, "type": m_type, "poster": poster, "backdrop": backdrop,
                 "badge": request.form.get('badge'), "quality": request.form.get('quality'),
                 "language": request.form.get('language'), "description": request.form.get('description'),
                 "categories": request.form.getlist('categories'), "views": 0,
@@ -1125,7 +1145,7 @@ def add_movie():
             }
             
             if m_type in ['Series', 'Drama']:
-                new_doc['seasons'] = [{"season": 1, "episodes": [{"episode": 1, "links": links}]}]
+                new_doc['seasons'] = [{"season": 1, "episodes": [{"episode": 1, "poster": "", "links": links}]}]
                 new_doc['links'] = []
                 
             movies_col.insert_one(new_doc)
@@ -1193,7 +1213,8 @@ def add_movie():
                 </div>
                 <div class="col-md-3 mb-3"><label>Badge</label><select name="badge" class="form-select"><option value="">No Badge</option>{% for b in badges %}<option value="{{b.value}}">{{b.value}}</option>{% endfor %}</select></div>
                 
-                <div class="col-md-12 mb-3"><label>Poster URL</label><input type="url" name="poster" class="form-control" required></div>
+                <div class="col-md-6 mb-3"><label>Poster URL (Portrait)</label><input type="url" name="poster" class="form-control" required></div>
+                <div class="col-md-6 mb-3"><label>Backdrop URL (Landscape)</label><input type="url" name="backdrop" class="form-control" placeholder="Optional (Fallback to Poster)"></div>
                 
                 <div class="col-md-6 mb-3"><label>Quality</label><select name="quality" class="form-select"><option value="">Select..</option>{% for q in qualities %}<option value="{{q.value}}">{{q.value}}</option>{% endfor %}</select></div>
                 <div class="col-md-6 mb-3"><label>Language</label><select name="language" class="form-select"><option value="">Select..</option>{% for l in langs %}<option value="{{l.value}}">{{l.value}}</option>{% endfor %}</select></div>
@@ -1307,6 +1328,7 @@ def edit_movie(id):
         update_data = {
             "title": request.form.get('title'),
             "poster": request.form.get('poster'),
+            "backdrop": request.form.get('backdrop'),
             "badge": request.form.get('badge'),
             "quality": request.form.get('quality'),
             "language": request.form.get('language'),
@@ -1323,6 +1345,9 @@ def edit_movie(id):
             seasons = movie.get('seasons', [])
             for s in seasons:
                 for ep in s['episodes']:
+                    # Update Episode Poster manually if changed
+                    ep['poster'] = request.form.get(f"ep_poster_S{s['season']}_E{ep['episode']}", "")
+                    
                     l_names = request.form.getlist(f"link_name_S{s['season']}_E{ep['episode']}[]")
                     l_quals = request.form.getlist(f"link_quality_S{s['season']}_E{ep['episode']}[]")
                     l_urls = request.form.getlist(f"link_url_S{s['season']}_E{ep['episode']}[]")
@@ -1346,7 +1371,8 @@ def edit_movie(id):
         <form method="POST">
             <div class="row">
                 <div class="col-md-12 mb-3"><label>Title</label><input type="text" name="title" class="form-control" value="{{ m.title }}"></div>
-                <div class="col-md-12 mb-3"><label>Poster URL</label><input type="text" name="poster" class="form-control" value="{{ m.poster }}"></div>
+                <div class="col-md-6 mb-3"><label>Poster URL (Portrait)</label><input type="text" name="poster" class="form-control" value="{{ m.poster }}"></div>
+                <div class="col-md-6 mb-3"><label>Backdrop URL (Landscape)</label><input type="text" name="backdrop" class="form-control" value="{{ m.backdrop | default(m.poster) }}"></div>
                 
                 <div class="col-4 mb-3"><label>Badge</label><select name="badge" class="form-select"><option value="">No Badge</option>{% for b in badges %}<option value="{{b.value}}" {% if m.badge==b.value %}selected{% endif %}>{{b.value}}</option>{% endfor %}</select></div>
                 <div class="col-4 mb-3"><label>Quality</label><select name="quality" class="form-select"><option value="">Select..</option>{% for q in qualities %}<option value="{{q.value}}" {% if m.quality==q.value %}selected{% endif %}>{{q.value}}</option>{% endfor %}</select></div>
@@ -1400,6 +1426,10 @@ def edit_movie(id):
                                 {% for ep in s.episodes %}
                                     <div class="mb-3 p-3 border border-secondary rounded" style="background:#151b2b;">
                                         <h5 class="text-warning">Episode {{ "%02d"|format(ep.episode|int) }}</h5>
+                                        
+                                        <!-- Editable Episode Poster Field -->
+                                        <input type="text" name="ep_poster_S{{ s.season }}_E{{ ep.episode }}" class="form-control form-control-sm mb-3" value="{{ ep.poster | default('') }}" placeholder="Episode Thumbnail URL (Optional)">
+                                        
                                         <div id="links_S{{ s.season }}_E{{ ep.episode }}">
                                             {% for link in ep.links %}
                                             <div class="input-group mb-2 mt-2">
