@@ -5,6 +5,7 @@ from bson.objectid import ObjectId
 import requests
 import os
 import json
+import time # Added for caching
 from urllib.parse import unquote  # %20 URL decoding fix
 
 app = Flask(__name__)
@@ -21,6 +22,24 @@ movies_col = db['movies']
 settings_col = db['settings']
 options_col = db['options']
 
+# ==========================================
+# High Traffic In-Memory Cache System (For 30k/sec users)
+# ==========================================
+CACHE_STORE = {}
+CACHE_TIMEOUT = 60 # Seconds to keep page in cache
+
+def get_cached_data(key):
+    if key in CACHE_STORE and (time.time() - CACHE_STORE[key]['time']) < CACHE_TIMEOUT:
+        return CACHE_STORE[key]['data']
+    return None
+
+def set_cached_data(key, data):
+    CACHE_STORE[key] = {'time': time.time(), 'data': data}
+
+def clear_cache():
+    global CACHE_STORE
+    CACHE_STORE = {}
+
 # Initialize default settings and admin credentials
 if not settings_col.find_one({"type": "general"}):
     settings_col.insert_one({
@@ -31,14 +50,18 @@ if not settings_col.find_one({"type": "general"}):
         "ad_banner_home_mobile": "",
         "ad_banner_detail_desktop": "",
         "ad_banner_detail_mobile": "",
-        "ad_banner_popular": "", # Popular Ad Field Added
+        "ad_banner_popular": "", 
         "direct_links": [],
         "notice": "Welcome to our Premium Movie Site!",
         "popup_notice": "Join our Telegram Group!",
         "telegram_link": "https://t.me/yourchannel",
         "tmdb_api_key": "",
         "admin_user": "admin",
-        "admin_pass": "admin"
+        "admin_pass": "admin",
+        "limit_movie": "10",      # New Setting
+        "limit_series": "10",     # New Setting
+        "limit_drama": "10",      # New Setting
+        "promos": []              # New Setting for Ads/Income
     })
 
 # ==========================================
@@ -60,12 +83,13 @@ FRONTEND_HTML = """
 <html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- ZOOM LOCK ADDED HERE -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DooPlay Pro - Movie Site</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        body { background-color: #0b0f19; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow-x: hidden; }
+        body { background-color: #0b0f19; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow-x: hidden; touch-action: manipulation; }
         .navbar { background-color: #151b2b; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .search-bar { max-width: 400px; width: 100%; flex: 1; }
         
@@ -100,6 +124,13 @@ FRONTEND_HTML = """
         .cat-badge { background: #1e2738; color: #fff; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-size: 13px; border: 1px solid #2d3748; white-space: nowrap;}
         .cat-badge:hover { background: #007bff; }
         
+        /* Slider Overlay styles */
+        .carousel-caption { background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0.6) 50%, rgba(0,212,255,0) 100%); bottom: 0; left: 0; right: 0; padding-bottom: 20px; }
+        
+        /* Promo styling */
+        .promo-box { border-radius: 8px; overflow: hidden; border: 1px solid #ffc107; transition: 0.3s; }
+        .promo-box:hover { box-shadow: 0 0 15px rgba(255, 193, 7, 0.5); }
+
         /* Loading Overlay Styling */
         #page-loader { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(11, 15, 25, 0.85); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; backdrop-filter: blur(5px); }
         .spinner { width: 60px; height: 60px; border: 6px solid #1e2738; border-top: 6px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; }
@@ -216,12 +247,12 @@ ADMIN_HTML = """
 <html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Admin Panel - DooPlay Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        body { background-color: #0b0f19; color: #fff; font-family: 'Segoe UI', sans-serif; }
+        body { background-color: #0b0f19; color: #fff; font-family: 'Segoe UI', sans-serif; touch-action: manipulation; }
         .sidebar { min-height: 100vh; background-color: #151b2b; padding-top: 20px; border-right: 1px solid #2d3748; }
         .sidebar a { color: #8c98a4; text-decoration: none; padding: 15px 20px; display: block; font-weight: 500; transition: 0.3s; font-size: 15px; }
         .sidebar a:hover, .sidebar a.active { background-color: #1e2738; color: #007bff; border-left: 4px solid #007bff; }
@@ -285,9 +316,46 @@ ADMIN_HTML = """
 
 @app.route('/')
 def home():
-    movies = list(movies_col.find().sort('_id', -1).limit(40))
+    # Cache System for high traffic (30k/sec)
+    cached_html = get_cached_data('home_page')
+    if cached_html:
+        return cached_html
+
+    settings = settings_col.find_one({"type": "general"}) or {}
+    
+    # Get Limits from admin
+    lim_m = int(settings.get('limit_movie', 10))
+    lim_s = int(settings.get('limit_series', 10))
+    lim_d = int(settings.get('limit_drama', 10))
+    promos = settings.get('promos', [])
+    
+    top_slider = list(movies_col.find().sort('views', -1).limit(5))
+    movies = list(movies_col.find({"type": "Movie"}).sort('_id', -1).limit(lim_m))
+    series = list(movies_col.find({"type": "Series"}).sort('_id', -1).limit(lim_s))
+    dramas = list(movies_col.find({"type": "Drama"}).sort('_id', -1).limit(lim_d))
+    
     categories = list(options_col.find({"type": "category"}))
     
+    # Macro for Promo Display
+    promo_html = """
+    {% if promos %}
+    <div class="row my-4">
+        {% for p in promos %}
+        <div class="col-6 col-md-4 col-lg-3 mb-3">
+            <a href="{{ p.url }}" target="_blank" class="text-decoration-none">
+                <div class="promo-box bg-dark text-white text-center">
+                    <img src="{{ p.image }}" class="w-100" style="height:120px; object-fit:cover;" alt="Promo">
+                    <div class="p-2">
+                        <span class="text-warning fw-bold small"><i class="fas fa-star"></i> {{ p.text }}</span>
+                    </div>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    """
+
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="cat-scroll mb-3">
         <a href="/" class="cat-badge bg-primary text-white">All</a>
@@ -296,7 +364,37 @@ def home():
         {% endfor %}
     </div>
 
-    <h4 class="mb-3 border-start border-primary border-4 ps-2 fw-bold text-uppercase">Latest Updates</h4>
+    <!-- TOP MOVIE SLIDER -->
+    <div id="topMoviesCarousel" class="carousel slide mb-4 rounded overflow-hidden shadow-lg border border-secondary" data-bs-ride="carousel">
+        <div class="carousel-inner">
+            {% for m in top_slider %}
+            <div class="carousel-item {% if loop.first %}active{% endif %}">
+                <a href="/movie/{{ m._id }}" onclick="showLoader()">
+                    <div style="height: 300px; width: 100%; background: url('{{ m.poster }}') center/cover; position: relative;">
+                        <div class="carousel-caption text-start">
+                            <h3 class="fw-bold text-white shadow-sm">{{ m.title }}</h3>
+                            <span class="badge bg-danger">{{ m.type }}</span>
+                            <span class="badge bg-primary"><i class="fas fa-eye"></i> {{ m.views }} Views</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        <button class="carousel-control-prev" type="button" data-bs-target="#topMoviesCarousel" data-bs-slide="prev">
+            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#topMoviesCarousel" data-bs-slide="next">
+            <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        </button>
+    </div>
+
+    <!-- MOVIES SECTION -->
+    {% if movies %}
+    <div class="d-flex justify-content-between align-items-center mb-3 border-start border-primary border-4 ps-2">
+        <h4 class="fw-bold text-uppercase m-0">Latest Movies</h4>
+        <a href="/category/Movie" class="btn btn-sm btn-outline-primary">View All</a>
+    </div>
     <div class="movie-grid">
         {% for m in movies %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
@@ -312,18 +410,76 @@ def home():
                     <div class="movie-meta">
                         <span class="text-warning fw-bold">{{ m.type }}</span>
                         {% if m.date %} <span class="ms-1">• {{ m.date[:4] }}</span> {% endif %}
-                        {% if m.language %} <span class="ms-1">• {{ m.language }}</span> {% endif %}
                     </div>
                 </div>
             </div>
         </a>
         {% endfor %}
     </div>
-    {% if not movies %}
-        <div class="alert alert-secondary text-center mt-5">কোনো মুভি পাওয়া যায়নি!</div>
+    """ + promo_html + """
+    {% endif %}
+
+    <!-- SERIES SECTION -->
+    {% if series %}
+    <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-success border-4 ps-2">
+        <h4 class="fw-bold text-uppercase m-0 text-success">Latest Series & Episodes</h4>
+        <a href="/category/Series" class="btn btn-sm btn-outline-success">View All</a>
+    </div>
+    <div class="movie-grid">
+        {% for m in series %}
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+            <div class="movie-card" style="border-color: #198754;">
+                <div class="poster-wrapper">
+                    {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                    <span class="movie-quality bg-success">Episodes Added</span>
+                    <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                    <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                </div>
+                <div class="movie-info">
+                    <div class="movie-title">{{ m.title }}</div>
+                    <div class="movie-meta"><span class="text-success fw-bold">{{ m.type }}</span></div>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    """ + promo_html + """
+    {% endif %}
+
+    <!-- DRAMA SECTION -->
+    {% if dramas %}
+    <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-warning border-4 ps-2">
+        <h4 class="fw-bold text-uppercase m-0 text-warning">Latest Drama</h4>
+        <a href="/category/Drama" class="btn btn-sm btn-outline-warning">View All</a>
+    </div>
+    <div class="movie-grid">
+        {% for m in dramas %}
+        <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
+            <div class="movie-card" style="border-color: #ffc107;">
+                <div class="poster-wrapper">
+                    {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                    <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
+                    <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
+                </div>
+                <div class="movie-info">
+                    <div class="movie-title">{{ m.title }}</div>
+                    <div class="movie-meta"><span class="text-warning fw-bold">{{ m.type }}</span></div>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    """ + promo_html + """
+    {% endif %}
+    
+    {% if not movies and not series and not dramas %}
+        <div class="alert alert-secondary text-center mt-5">কোনো পোস্ট পাওয়া যায়নি!</div>
     {% endif %}
     """)
-    return render_template_string(html, movies=movies, categories=categories, db=db, page_name='home')
+    
+    rendered_html = render_template_string(html, top_slider=top_slider, movies=movies, series=series, dramas=dramas, categories=categories, db=db, page_name='home', promos=promos)
+    set_cached_data('home_page', rendered_html) # Save to Cache
+    return rendered_html
 
 @app.route('/search')
 def search():
@@ -360,7 +516,12 @@ def search():
 @app.route('/category/<cat_name>')
 def category_filter(cat_name):
     cat_name = unquote(cat_name) # Fix URL Encoding (%20 to space)
-    movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
+    # Allow searching by type (Movie, Series, Drama) as well
+    if cat_name in ['Movie', 'Series', 'Drama']:
+        movies = list(movies_col.find({"type": cat_name}).sort('_id', -1))
+    else:
+        movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
+    
     categories = list(options_col.find({"type": "category"}))
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="cat-scroll mb-3">
@@ -482,7 +643,8 @@ def movie_details(id):
                             {% for ep in s.episodes %}
                                 <div class="ep-box">
                                     <button class="btn btn-outline-primary btn-sm w-100 text-start fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
-                                        <span class="fs-6"><i class="fas fa-tv me-1"></i> Episode {{ "%02d"|format(ep.episode|int) }}</span> 
+                                        <!-- FIXED EPISODE TEXT: Shows Season and Episode -->
+                                        <span class="fs-6"><i class="fas fa-tv me-1"></i> Season {{ "%02d"|format(s.season|int) }} - Episode {{ "%02d"|format(ep.episode|int) }}</span> 
                                         <i class="fas fa-chevron-down"></i>
                                     </button>
                                     
@@ -546,7 +708,9 @@ def admin_login():
             flash("ভুল ইউজারনেম বা পাসওয়ার্ড!")
             
     html = """
-    <!DOCTYPE html><html data-bs-theme="dark"><head><title>Admin Login</title>
+    <!DOCTYPE html><html data-bs-theme="dark"><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Admin Login</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
     <body style="background:#0b0f19;" class="d-flex justify-content-center align-items-center vh-100">
         <div class="card p-4 shadow-lg border-primary" style="background:#151b2b; width: 350px;">
@@ -608,10 +772,17 @@ def admin_dashboard():
 @login_required
 def admin_settings():
     if request.method == 'POST':
-        # Handles unlimited direct links list
+        # Clear Home Cache on Setting changes
+        clear_cache()
+
         d_links = request.form.getlist('direct_links[]')
-        # Clean empty strings from list
         d_links = [url for url in d_links if url.strip()]
+        
+        # Promos Processing
+        p_texts = request.form.getlist('promo_text[]')
+        p_images = request.form.getlist('promo_image[]')
+        p_urls = request.form.getlist('promo_url[]')
+        promos = [{"text": t, "image": i, "url": u} for t, i, u in zip(p_texts, p_images, p_urls) if t and u]
         
         settings_col.update_one({"type": "general"}, {"$set": {
             "ad_status_banner": request.form.get('ad_status_banner'),
@@ -627,7 +798,11 @@ def admin_settings():
             "popup_notice": request.form.get('popup_notice'),
             "tmdb_api_key": request.form.get('tmdb_api_key'),
             "admin_user": request.form.get('admin_user'),
-            "admin_pass": request.form.get('admin_pass')
+            "admin_pass": request.form.get('admin_pass'),
+            "limit_movie": request.form.get('limit_movie', '10'),
+            "limit_series": request.form.get('limit_series', '10'),
+            "limit_drama": request.form.get('limit_drama', '10'),
+            "promos": promos
         }})
         flash("সেটিংস এবং অ্যাডস সফলভাবে আপডেট হয়েছে!")
         return redirect(url_for('admin_settings'))
@@ -640,6 +815,40 @@ def admin_settings():
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল (Advanced)</h2>
     <form method="POST" class="card p-4">
         
+        <h5 class="text-danger border-bottom border-secondary pb-2"><i class="fas fa-layer-group"></i> Homepage Category Post Limits</h5>
+        <div class="row mb-4 bg-dark p-3 rounded border border-secondary">
+            <div class="col-md-4 mb-2">
+                <label class="text-white">Movie Section Limit</label>
+                <input type="number" name="limit_movie" class="form-control" value="{{ s.get('limit_movie', '10') }}" min="1">
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="text-white">Series Section Limit</label>
+                <input type="number" name="limit_series" class="form-control" value="{{ s.get('limit_series', '10') }}" min="1">
+            </div>
+            <div class="col-md-4 mb-2">
+                <label class="text-white">Drama Section Limit</label>
+                <input type="number" name="limit_drama" class="form-control" value="{{ s.get('limit_drama', '10') }}" min="1">
+            </div>
+        </div>
+
+        <h5 class="text-warning border-bottom border-secondary pb-2"><i class="fas fa-money-bill-wave"></i> Unlimited Promote & Income System (Home Page)</h5>
+        <div class="row mb-4 bg-dark p-3 rounded border border-warning">
+            <div class="col-12">
+                <label class="mb-2 text-warning">এই প্রোমোগুলো হোমপেজের প্রতি ক্যাটাগরির নিচে শো করবে (ছবি, লেখা, লিঙ্ক সহ)</label>
+                <div id="promoContainer">
+                    {% for p in s.get('promos', []) %}
+                    <div class="input-group mb-2 border border-secondary p-1 bg-black rounded">
+                        <input type="text" name="promo_text[]" class="form-control" value="{{ p.text }}" placeholder="Promo Text Title" required>
+                        <input type="url" name="promo_image[]" class="form-control" value="{{ p.image }}" placeholder="Image/Screenshot URL" required>
+                        <input type="url" name="promo_url[]" class="form-control" value="{{ p.url }}" placeholder="Destination Link" required>
+                        <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="button" class="btn btn-outline-warning mt-2 fw-bold w-100" onclick="addPromo()"><i class="fas fa-plus"></i> Add New Promo</button>
+            </div>
+        </div>
+
         <h5 class="text-info border-bottom border-secondary pb-2"><i class="fas fa-link"></i> Direct Ads (Auto Switch on Click)</h5>
         <div class="row mb-4 bg-dark p-3 rounded">
             <div class="col-md-12 mb-3">
@@ -720,6 +929,16 @@ def admin_settings():
                 <input type="url" name="direct_links[]" class="form-control" placeholder="https://ad-network.com/..." required>
                 <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`;
             document.getElementById('directLinkContainer').appendChild(div);
+        }
+        function addPromo() {
+            let div = document.createElement('div');
+            div.className = "input-group mb-2 border border-secondary p-1 bg-black rounded";
+            div.innerHTML = `
+                <input type="text" name="promo_text[]" class="form-control" placeholder="Promo Text Title" required>
+                <input type="url" name="promo_image[]" class="form-control" placeholder="Image/Screenshot URL" required>
+                <input type="url" name="promo_url[]" class="form-control" placeholder="Destination Link" required>
+                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()"><i class="fas fa-trash"></i></button>`;
+            document.getElementById('promoContainer').appendChild(div);
         }
     </script>
     """)
@@ -835,6 +1054,7 @@ def add_movie():
     settings = settings_col.find_one({"type": "general"})
     
     if request.method == 'POST':
+        clear_cache() # Clear cache on new post
         action = request.form.get('action')
         
         if action == 'fetch_tmdb':
@@ -1083,6 +1303,7 @@ def edit_movie(id):
     movie = movies_col.find_one({"_id": ObjectId(id)})
     
     if request.method == 'POST':
+        clear_cache() # Clear cache on edit
         update_data = {
             "title": request.form.get('title'),
             "poster": request.form.get('poster'),
@@ -1296,12 +1517,14 @@ def all_movies():
 @app.route('/admin/delete_movie/<id>')
 @login_required
 def delete_movie(id):
+    clear_cache()
     movies_col.delete_one({"_id": ObjectId(id)})
     return redirect(url_for('all_movies'))
 
 @app.route('/admin/delete_multiple', methods=['POST'])
 @login_required
 def delete_multiple():
+    clear_cache()
     data = request.json
     ids = [ObjectId(i) for i in data.get('ids', [])]
     movies_col.delete_many({"_id": {"$in": ids}})
