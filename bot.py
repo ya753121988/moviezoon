@@ -58,9 +58,10 @@ if not settings_col.find_one({"type": "general"}):
         "tmdb_api_key": "",
         "admin_user": "admin",
         "admin_pass": "admin",
-        "limit_movie": "10",
-        "limit_series": "10",
-        "limit_drama": "10",
+        "limit_movie": "12",
+        "limit_series": "12",
+        "limit_drama": "12",
+        "limit_episode": "12",
         "promos": []
     })
 
@@ -87,21 +88,46 @@ FRONTEND_HTML = """
     <title>DooPlay Pro - Movie Site</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- STRICT DESKTOP ZOOM LOCK JS -->
+    <script>
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && (event.key === '=' || event.key === '-' || event.key === '0')) {
+                event.preventDefault();
+            }
+        });
+        document.addEventListener('wheel', function(event) {
+            if (event.ctrlKey) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+    </script>
+    
     <style>
         body { background-color: #0b0f19; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow-x: hidden; touch-action: manipulation; }
         .navbar { background-color: #151b2b; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .search-bar { max-width: 400px; width: 100%; flex: 1; }
+        .search-bar { max-width: 500px; width: 100%; flex: 1; }
         
-        /* Grid fixed for Mobile: guaranteed exactly 2 columns on small screens */
+        /* Grid fixed for Mobile & Fluid layout for Desktop Extra Wide */
         .movie-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 15px 0; width: 100%; }
         @media (min-width: 576px) { .movie-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (min-width: 768px) { .movie-grid { grid-template-columns: repeat(4, 1fr); gap: 15px; } }
         @media (min-width: 992px) { .movie-grid { grid-template-columns: repeat(5, 1fr); } }
+        @media (min-width: 1200px) { .movie-grid { grid-template-columns: repeat(6, 1fr); } }
+        @media (min-width: 1400px) { .movie-grid { grid-template-columns: repeat(7, 1fr); } }
         
+        /* Landscape Episode Grid */
+        .episode-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: 12px; padding: 15px 0; width: 100%; }
+        @media (min-width: 576px) { .episode-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (min-width: 992px) { .episode-grid { grid-template-columns: repeat(3, 1fr); gap: 15px; } }
+        @media (min-width: 1200px) { .episode-grid { grid-template-columns: repeat(4, 1fr); } }
+        @media (min-width: 1500px) { .episode-grid { grid-template-columns: repeat(5, 1fr); } }
+
         .movie-card { background: #1e2738; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; height: 100%; border: 1px solid #2d3748; transition: box-shadow 0.3s ease; }
         .movie-card:hover { box-shadow: 0 8px 15px rgba(0,123,255,0.3); }
         
         .poster-wrapper { position: relative; width: 100%; aspect-ratio: 2/3; overflow: hidden; border-bottom: 1px solid #2d3748; }
+        .poster-wrapper-landscape { position: relative; width: 100%; aspect-ratio: 16/9; overflow: hidden; border-bottom: 1px solid #2d3748; }
         .movie-poster { width: 100%; height: 100%; object-fit: cover; }
         
         .movie-badge { position: absolute; top: 8px; right: 8px; background: #e50914; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
@@ -143,19 +169,19 @@ FRONTEND_HTML = """
         <h5 class="mt-3 text-white fw-bold">Please Wait...</h5>
     </div>
 
+    <!-- CONTAINER-FLUID for FULL SCREEN DESKTOP -->
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
-        <div class="container d-flex flex-wrap align-items-center justify-content-between">
-            <a class="navbar-brand fw-bold me-auto" href="/"><i class="fas fa-play text-primary"></i> DooPlay</a>
-            <form action="/search" method="GET" class="d-flex search-bar mx-2 mx-lg-auto order-3 order-lg-2 mt-2 mt-lg-0 w-100" style="max-width: 400px;">
+        <div class="container-fluid px-3 px-md-5 d-flex flex-wrap align-items-center justify-content-between">
+            <a class="navbar-brand fw-bold me-auto fs-4" href="/"><i class="fas fa-play text-primary"></i> DooPlay</a>
+            <form action="/search" method="GET" class="d-flex search-bar mx-2 mx-lg-auto order-3 order-lg-2 mt-2 mt-lg-0 w-100">
                 <input class="form-control me-2 bg-dark text-white border-secondary" type="search" name="q" placeholder="Search Movies, Series..." required>
-                <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i></button>
+                <button class="btn btn-primary px-4" type="submit"><i class="fas fa-search"></i></button>
             </form>
             <button class="navbar-toggler ms-2 order-2 order-lg-3" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse order-4" id="navMenu" style="flex-grow: 0;">
                 <ul class="navbar-nav ms-auto mt-3 mt-lg-0" style="max-height: 350px; overflow-y: auto; overflow-x: hidden;">
-                    <!-- Auto Categories in 3-dot menu -->
                     {% set nav_cats = db.options.find({"type": "category"}) %}
                     <li class="nav-item"><a class="nav-link text-white fw-bold" href="/"><i class="fas fa-home text-primary"></i> Home</a></li>
                     {% for c in nav_cats %}
@@ -168,16 +194,15 @@ FRONTEND_HTML = """
     
     {% set settings = db.settings.find_one({"type": "general"}) %}
     
-    <div class="container mt-3">
+    <div class="container-fluid px-3 px-md-5 mt-3">
         {% if settings.get('notice') %}
-            <div class="alert alert-info text-center shadow-sm" style="background:#1e2738; color:#fff; border:none;">
+            <div class="alert alert-info text-center shadow-sm rounded border-primary border-start border-4" style="background:#1e2738; color:#fff;">
                 <i class="fas fa-bell text-warning"></i> {{ settings.get('notice') }}
             </div>
         {% endif %}
         
         <!-- BANNER ADS SYSTEM (Desktop & Mobile Specific) -->
         {% if settings.get('ad_status_banner') == 'on' %}
-            <!-- Popular Ad Section -->
             {% if settings.get('ad_banner_popular') %}
                 <div class="text-center mb-3 ad-box w-100">
                     <div style="font-size: 11px; color: #8c98a4; margin-bottom: 2px;">- Popular Advertisement -</div>
@@ -195,7 +220,8 @@ FRONTEND_HTML = """
         {% endif %}
     </div>
 
-    <div class="container">
+    <!-- MAIN FLUID CONTAINER -->
+    <div class="container-fluid px-3 px-md-5 pb-5">
         <!-- CONTENT_BLOCK -->
     </div>
 
@@ -242,6 +268,21 @@ ADMIN_HTML = """
     <title>Admin Panel - DooPlay Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- STRICT DESKTOP ZOOM LOCK JS -->
+    <script>
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && (event.key === '=' || event.key === '-' || event.key === '0')) {
+                event.preventDefault();
+            }
+        });
+        document.addEventListener('wheel', function(event) {
+            if (event.ctrlKey) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+    </script>
+    
     <style>
         body { background-color: #0b0f19; color: #fff; font-family: 'Segoe UI', sans-serif; touch-action: manipulation; }
         .sidebar { min-height: 100vh; background-color: #151b2b; padding-top: 20px; border-right: 1px solid #2d3748; }
@@ -315,9 +356,10 @@ def home():
     settings = settings_col.find_one({"type": "general"}) or {}
     
     # Get Limits from admin
-    lim_m = int(settings.get('limit_movie', 10))
-    lim_s = int(settings.get('limit_series', 10))
-    lim_d = int(settings.get('limit_drama', 10))
+    lim_m = int(settings.get('limit_movie', 12))
+    lim_s = int(settings.get('limit_series', 12))
+    lim_d = int(settings.get('limit_drama', 12))
+    lim_e = int(settings.get('limit_episode', 12))
     promos = settings.get('promos', [])
     
     top_slider = list(movies_col.find().sort('views', -1).limit(5))
@@ -325,6 +367,27 @@ def home():
     series = list(movies_col.find({"type": "Series"}).sort('_id', -1).limit(lim_s))
     dramas = list(movies_col.find({"type": "Drama"}).sort('_id', -1).limit(lim_d))
     
+    # LATEST EPISODES EXTRACTION (Automated category display)
+    latest_episodes = []
+    recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama"]}}).sort('_id', -1).limit(20))
+    for s_obj in recent_series_dramas:
+        for season in reversed(s_obj.get('seasons', [])):
+            for ep in reversed(season.get('episodes', [])):
+                ep_copy = ep.copy()
+                ep_copy['series_title'] = s_obj['title']
+                ep_copy['series_id'] = str(s_obj['_id'])
+                ep_copy['season_num'] = season['season']
+                ep_copy['m_backdrop'] = s_obj.get('backdrop')
+                ep_copy['m_poster'] = s_obj.get('poster')
+                ep_copy['m_badge'] = s_obj.get('badge')
+                latest_episodes.append(ep_copy)
+                if len(latest_episodes) >= lim_e:
+                    break
+            if len(latest_episodes) >= lim_e:
+                break
+        if len(latest_episodes) >= lim_e:
+            break
+
     categories = list(options_col.find({"type": "category"}))
     
     # Macro for Promo Display
@@ -332,9 +395,9 @@ def home():
     {% if promos %}
     <div class="row my-4">
         {% for p in promos %}
-        <div class="col-6 col-md-4 col-lg-3 mb-3">
+        <div class="col-6 col-md-4 col-lg-3 col-xl-2 mb-3">
             <a href="{{ p.url }}" target="_blank" class="text-decoration-none">
-                <div class="promo-box bg-dark text-white text-center">
+                <div class="promo-box bg-dark text-white text-center h-100">
                     <img src="{{ p.image }}" class="w-100" style="height:120px; object-fit:cover;" alt="Promo">
                     <div class="p-2">
                         <span class="text-warning fw-bold small"><i class="fas fa-star"></i> {{ p.text }}</span>
@@ -362,11 +425,11 @@ def home():
             <div class="carousel-item {% if loop.first %}active{% endif %}">
                 <a href="/movie/{{ m._id }}" onclick="showLoader()">
                     <!-- SLIDER Uses BACKDROP (Landscape) fallback to Poster -->
-                    <div style="height: 300px; width: 100%; background: url('{{ m.backdrop or m.poster }}') center/cover; position: relative;">
-                        <div class="carousel-caption text-start">
-                            <h3 class="fw-bold text-white shadow-sm">{{ m.title }}</h3>
-                            <span class="badge bg-danger">{{ m.type }}</span>
-                            <span class="badge bg-primary"><i class="fas fa-eye"></i> {{ m.views }} Views</span>
+                    <div style="height: 45vh; min-height: 300px; width: 100%; background: url('{{ m.backdrop or m.poster }}') center/cover; position: relative;">
+                        <div class="carousel-caption text-start px-md-5 pb-md-5">
+                            <h2 class="fw-bold text-white shadow-sm" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">{{ m.title }}</h2>
+                            <span class="badge bg-danger px-3 py-2 fs-6">{{ m.type }}</span>
+                            <span class="badge bg-primary px-3 py-2 fs-6"><i class="fas fa-eye"></i> {{ m.views }} Views</span>
                         </div>
                     </div>
                 </a>
@@ -374,18 +437,52 @@ def home():
             {% endfor %}
         </div>
         <button class="carousel-control-prev" type="button" data-bs-target="#topMoviesCarousel" data-bs-slide="prev">
-            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+            <span class="carousel-control-prev-icon" aria-hidden="true" style="width: 3rem; height: 3rem;"></span>
         </button>
         <button class="carousel-control-next" type="button" data-bs-target="#topMoviesCarousel" data-bs-slide="next">
-            <span class="carousel-control-next-icon" aria-hidden="true"></span>
+            <span class="carousel-control-next-icon" aria-hidden="true" style="width: 3rem; height: 3rem;"></span>
         </button>
     </div>
 
+    <!-- LATEST EPISODES SECTION (NEW FEATURE) -->
+    {% if latest_episodes %}
+    <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-info border-4 ps-3">
+        <h3 class="fw-bold text-uppercase m-0 text-info">Latest Episodes</h3>
+    </div>
+    <div class="episode-grid">
+        {% for ep in latest_episodes %}
+        <a href="/movie/{{ ep.series_id }}" class="text-decoration-none" onclick="showLoader()">
+            <div class="movie-card" style="border-color: #0dcaf0;">
+                <div class="poster-wrapper-landscape">
+                    {% if ep.m_badge %}<span class="movie-badge">{{ ep.m_badge }}</span>{% endif %}
+                    <span class="movie-quality bg-info text-dark shadow-sm">S{{ "%02d"|format(ep.season_num|int) }} E{{ "%02d"|format(ep.episode|int) }}</span>
+                    <!-- EPISODE POSTER Fallback sequence -->
+                    <img src="{{ ep.poster or ep.m_backdrop or ep.m_poster }}" alt="Episode" class="movie-poster" onerror="this.src='https://via.placeholder.com/600x337?text=No+Poster'">
+                </div>
+                <div class="movie-info text-start p-3">
+                    <div class="movie-title fs-5 mb-1 text-info">{{ ep.series_title }}</div>
+                    <div class="movie-meta justify-content-start">
+                        <span class="text-light fw-bold fs-6">
+                            {% if ep.ep_title %}
+                                {{ ep.ep_title }}
+                            {% else %}
+                                Season {{ "%02d"|format(ep.season_num|int) }} Ep {{ "%02d"|format(ep.episode|int) }}
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    """ + promo_html + """
+    {% endif %}
+
     <!-- MOVIES SECTION (PORTRAIT POSTERS IN GRID) -->
     {% if movies %}
-    <div class="d-flex justify-content-between align-items-center mb-3 border-start border-primary border-4 ps-2">
-        <h4 class="fw-bold text-uppercase m-0">Latest Movies</h4>
-        <a href="/category/Movie" class="btn btn-sm btn-outline-primary">View All</a>
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-primary border-4 ps-3">
+        <h3 class="fw-bold text-uppercase m-0 text-primary">Latest Movies</h3>
+        <a href="/category/Movie" class="btn btn-outline-primary fw-bold px-4">View All</a>
     </div>
     <div class="movie-grid">
         {% for m in movies %}
@@ -395,11 +492,10 @@ def home():
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
                     {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
                     <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
-                    <!-- Uses normal portrait poster in Home Grid -->
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
                 <div class="movie-info">
-                    <div class="movie-title">{{ m.title }}</div>
+                    <div class="movie-title fs-6">{{ m.title }}</div>
                     <div class="movie-meta">
                         <span class="text-warning fw-bold">{{ m.type }}</span>
                         {% if m.date %} <span class="ms-1">• {{ m.date[:4] }}</span> {% endif %}
@@ -414,9 +510,9 @@ def home():
 
     <!-- SERIES SECTION -->
     {% if series %}
-    <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-success border-4 ps-2">
-        <h4 class="fw-bold text-uppercase m-0 text-success">Latest Series & Episodes</h4>
-        <a href="/category/Series" class="btn btn-sm btn-outline-success">View All</a>
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-success border-4 ps-3">
+        <h3 class="fw-bold text-uppercase m-0 text-success">Latest Series</h3>
+        <a href="/category/Series" class="btn btn-outline-success fw-bold px-4">View All</a>
     </div>
     <div class="movie-grid">
         {% for m in series %}
@@ -429,7 +525,7 @@ def home():
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
                 <div class="movie-info">
-                    <div class="movie-title">{{ m.title }}</div>
+                    <div class="movie-title fs-6">{{ m.title }}</div>
                     <div class="movie-meta"><span class="text-success fw-bold">{{ m.type }}</span></div>
                 </div>
             </div>
@@ -441,9 +537,9 @@ def home():
 
     <!-- DRAMA SECTION -->
     {% if dramas %}
-    <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-warning border-4 ps-2">
-        <h4 class="fw-bold text-uppercase m-0 text-warning">Latest Drama</h4>
-        <a href="/category/Drama" class="btn btn-sm btn-outline-warning">View All</a>
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-warning border-4 ps-3">
+        <h3 class="fw-bold text-uppercase m-0 text-warning">Latest Drama</h3>
+        <a href="/category/Drama" class="btn btn-outline-warning fw-bold px-4">View All</a>
     </div>
     <div class="movie-grid">
         {% for m in dramas %}
@@ -455,7 +551,7 @@ def home():
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
                 <div class="movie-info">
-                    <div class="movie-title">{{ m.title }}</div>
+                    <div class="movie-title fs-6">{{ m.title }}</div>
                     <div class="movie-meta"><span class="text-warning fw-bold">{{ m.type }}</span></div>
                 </div>
             </div>
@@ -465,12 +561,12 @@ def home():
     """ + promo_html + """
     {% endif %}
     
-    {% if not movies and not series and not dramas %}
-        <div class="alert alert-secondary text-center mt-5">কোনো পোস্ট পাওয়া যায়নি!</div>
+    {% if not movies and not series and not dramas and not latest_episodes %}
+        <div class="alert alert-secondary text-center mt-5 fs-4">কোনো পোস্ট পাওয়া যায়নি!</div>
     {% endif %}
     """)
     
-    rendered_html = render_template_string(html, top_slider=top_slider, movies=movies, series=series, dramas=dramas, categories=categories, db=db, page_name='home', promos=promos)
+    rendered_html = render_template_string(html, top_slider=top_slider, movies=movies, series=series, dramas=dramas, latest_episodes=latest_episodes, categories=categories, db=db, page_name='home', promos=promos)
     set_cached_data('home_page', rendered_html) # Save to Cache
     return rendered_html
 
@@ -479,7 +575,7 @@ def search():
     query = request.args.get('q', '')
     movies = list(movies_col.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <h4 class="mb-3 border-start border-primary border-4 ps-2">Search Results for: <span class="text-warning">{{ query }}</span></h4>
+    <h3 class="mb-4 border-start border-primary border-4 ps-3">Search Results for: <span class="text-warning">{{ query }}</span></h3>
     <div class="movie-grid">
         {% for m in movies %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
@@ -502,7 +598,7 @@ def search():
         </a>
         {% endfor %}
     </div>
-    {% if not movies %}<h5 class="text-center text-muted mt-5">No results found!</h5>{% endif %}
+    {% if not movies %}<h4 class="text-center text-muted mt-5">No results found!</h4>{% endif %}
     """)
     return render_template_string(html, movies=movies, query=query, db=db, page_name='search')
 
@@ -522,7 +618,7 @@ def category_filter(cat_name):
             <a href="/category/{{ c.value }}" class="cat-badge {% if cat_name == c.value %}bg-primary{% endif %}">{{ c.value }}</a>
         {% endfor %}
     </div>
-    <h4 class="mb-3 border-start border-primary border-4 ps-2">Category: <span class="text-warning">{{ cat_name }}</span></h4>
+    <h3 class="mb-4 border-start border-primary border-4 ps-3">Category: <span class="text-warning">{{ cat_name }}</span></h3>
     <div class="movie-grid">
         {% for m in movies %}
         <a href="/movie/{{ m._id }}" class="text-decoration-none" onclick="showLoader()">
@@ -556,75 +652,77 @@ def movie_details(id):
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="row mt-3">
         <!-- FULL WIDTH LANDSCAPE BANNER HEADER -->
-        <div class="col-12 mb-4">
-            <div class="position-relative w-100 shadow-lg border border-secondary" style="height: 350px; border-radius: 12px; overflow: hidden;">
-                <img src="{{ m.backdrop or m.poster }}" class="w-100 h-100" style="object-fit: cover; filter: brightness(0.6);" alt="Banner Backdrop" onerror="this.src='{{ m.poster }}'">
-                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0) 100%); height: 250px;"></div>
+        <div class="col-12 mb-5">
+            <div class="position-relative w-100 shadow-lg border border-secondary" style="height: 50vh; min-height: 400px; border-radius: 12px; overflow: hidden;">
+                <img src="{{ m.backdrop or m.poster }}" class="w-100 h-100" style="object-fit: cover; filter: brightness(0.55);" alt="Banner Backdrop" onerror="this.src='{{ m.poster }}'">
+                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0) 100%); height: 300px;"></div>
                 
-                {% if m.badge %}<span class="movie-badge shadow" style="font-size: 16px; padding: 6px 20px; top: 15px; right: 15px;">{{ m.badge }}</span>{% endif %}
+                {% if m.badge %}<span class="movie-badge shadow-lg" style="font-size: 18px; padding: 8px 25px; top: 20px; right: 20px;">{{ m.badge }}</span>{% endif %}
                 
-                <div style="position: absolute; bottom: 20px; left: 20px; right: 20px;">
-                    <h1 class="fw-bold text-white mb-3" style="text-shadow: 2px 2px 5px #000; font-size: 28px;">{{ m.title }}</h1>
+                <div style="position: absolute; bottom: 30px; left: 30px; right: 30px;">
+                    <h1 class="fw-bold text-white mb-3 display-4" style="text-shadow: 2px 2px 5px #000;">{{ m.title }}</h1>
                     <div class="d-flex flex-wrap gap-2">
-                        <span class="badge bg-danger fs-6 shadow-sm"><i class="fas fa-video"></i> {{ m.type }}</span>
-                        {% if m.date %}<span class="badge bg-info text-dark fs-6 shadow-sm"><i class="far fa-calendar-alt"></i> {{ m.date[:4] }}</span>{% endif %}
-                        {% if m.quality %}<span class="badge bg-primary fs-6 shadow-sm">{{ m.quality }}</span>{% endif %}
-                        {% if m.language %}<span class="badge bg-success fs-6 shadow-sm"><i class="fas fa-language"></i> {{ m.language }}</span>{% endif %}
+                        <span class="badge bg-danger fs-5 shadow-sm px-3 py-2"><i class="fas fa-video"></i> {{ m.type }}</span>
+                        {% if m.date %}<span class="badge bg-info text-dark fs-5 shadow-sm px-3 py-2"><i class="far fa-calendar-alt"></i> {{ m.date[:4] }}</span>{% endif %}
+                        {% if m.quality %}<span class="badge bg-primary fs-5 shadow-sm px-3 py-2">{{ m.quality }}</span>{% endif %}
+                        {% if m.language %}<span class="badge bg-success fs-5 shadow-sm px-3 py-2"><i class="fas fa-language"></i> {{ m.language }}</span>{% endif %}
                         {% for cat in m.categories %}
-                            <span class="badge bg-secondary fs-6 shadow-sm">{{ cat }}</span>
+                            <span class="badge bg-secondary fs-5 shadow-sm px-3 py-2">{{ cat }}</span>
                         {% endfor %}
-                        <span class="badge bg-dark border border-secondary fs-6 shadow-sm"><i class="fas fa-eye text-primary"></i> Views: {{ m.views }}</span>
+                        <span class="badge bg-dark border border-secondary fs-5 shadow-sm px-3 py-2"><i class="fas fa-eye text-primary"></i> Views: {{ m.views }}</span>
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="col-12">
-            <p class="text-light p-3 rounded shadow-sm" style="background: #151b2b; font-size: 15px; line-height: 1.7; border-left: 4px solid #007bff; border-bottom: 1px solid #2d3748; border-right: 1px solid #2d3748; border-top: 1px solid #2d3748;">{{ m.description }}</p>
-            <hr class="border-secondary my-4">
+            <p class="text-light p-4 rounded shadow-sm fs-5" style="background: #151b2b; line-height: 1.8; border-left: 5px solid #007bff; border-bottom: 1px solid #2d3748; border-right: 1px solid #2d3748; border-top: 1px solid #2d3748;">{{ m.description }}</p>
+            <hr class="border-secondary my-5">
             
             {% if m.type == 'Movie' %}
-                <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Download & Watch Links</h4>
+                <h3 class="mb-4 fw-bold border-start border-warning border-4 ps-3">Download & Watch Links</h3>
                 
                 <div class="d-flex flex-column gap-3">
                     {% if m.links %}
                         {% for group_name, items in m.links|groupby('name') %}
-                        <div class="link-group border border-secondary rounded bg-dark p-2">
-                            <button class="btn btn-outline-warning w-100 fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#col_movie_{{ loop.index }}">
-                                <span class="fs-5">
+                        <div class="link-group border border-secondary rounded bg-dark p-3">
+                            <button class="btn btn-outline-warning w-100 fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#col_movie_{{ loop.index }}" style="height: 60px;">
+                                <span class="fs-4">
                                     {% if 'online' in group_name.lower() or 'watch' in group_name.lower() %}<i class="fas fa-play-circle"></i>
                                     {% elif 'telegram' in group_name.lower() %}<i class="fab fa-telegram"></i>
                                     {% else %}<i class="fas fa-download"></i>{% endif %}
                                     {{ group_name }}
                                 </span>
-                                <i class="fas fa-chevron-down"></i>
+                                <i class="fas fa-chevron-down fs-4"></i>
                             </button>
-                            <div class="collapse mt-2" id="col_movie_{{ loop.index }}">
-                                <div class="d-flex flex-column gap-2">
+                            <div class="collapse mt-3" id="col_movie_{{ loop.index }}">
+                                <div class="row g-3">
                                     {% for item in items %}
-                                    <a href="{{ item.url }}" onclick="checkAd(event, '{{ item.url }}')" class="btn btn-primary w-100 d-flex justify-content-between align-items-center p-2 shadow-sm">
-                                        <span><i class="fas fa-link"></i> Click to Open</span>
-                                        {% if item.quality %}<span class="badge bg-light text-dark px-2 py-1 fs-6">{{ item.quality }}</span>{% endif %}
-                                    </a>
+                                    <div class="col-md-6 col-lg-4">
+                                        <a href="{{ item.url }}" onclick="checkAd(event, '{{ item.url }}')" class="btn btn-primary w-100 d-flex justify-content-between align-items-center p-3 shadow-sm fs-5">
+                                            <span><i class="fas fa-link"></i> Click to Open</span>
+                                            {% if item.quality %}<span class="badge bg-light text-dark px-3 py-2 fs-6">{{ item.quality }}</span>{% endif %}
+                                        </a>
+                                    </div>
                                     {% endfor %}
                                 </div>
                             </div>
                         </div>
                         {% endfor %}
                     {% else %}
-                        <div class="alert alert-secondary w-100 text-center">No links available yet.</div>
+                        <div class="alert alert-secondary w-100 text-center fs-5">No links available yet.</div>
                     {% endif %}
                 </div>
             {% else %}
-                <h4 class="mb-3 fw-bold border-start border-warning border-4 ps-2">Seasons & Episodes</h4>
+                <h3 class="mb-4 fw-bold border-start border-warning border-4 ps-3">Seasons & Episodes</h3>
                 
                 <!-- Vertical Scroll for Seasons -->
-                <div class="p-2 border border-secondary rounded mb-3 shadow-sm" style="background:#151b2b; max-height: 250px; overflow-y: auto; scrollbar-width: thin;">
-                    <ul class="nav nav-pills flex-column gap-2" id="seasonTabs" role="tablist">
+                <div class="p-3 border border-secondary rounded mb-4 shadow-sm" style="background:#151b2b; max-height: 350px; overflow-y: auto; scrollbar-width: thin;">
+                    <ul class="nav nav-pills flex-column gap-3" id="seasonTabs" role="tablist">
                         {% for s in m.seasons %}
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link w-100 text-start {% if loop.first %}active{% endif %} fw-bold rounded" data-bs-toggle="pill" data-bs-target="#season_{{ s.season }}" type="button" role="tab">
-                                <i class="fas fa-folder-open me-2"></i> Season {{ "%02d"|format(s.season|int) }}
+                            <button class="nav-link w-100 text-start {% if loop.first %}active{% endif %} fw-bold rounded fs-5 p-3" data-bs-toggle="pill" data-bs-target="#season_{{ s.season }}" type="button" role="tab">
+                                <i class="fas fa-folder-open me-3"></i> Season {{ "%02d"|format(s.season|int) }}
                             </button>
                         </li>
                         {% endfor %}
@@ -635,48 +733,63 @@ def movie_details(id):
                     {% for s in m.seasons %}
                     <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="season_{{ s.season }}" role="tabpanel">
                         
-                        <!-- Episodes are vertically scrollable here -->
-                        <div class="episodes-grid">
+                        <!-- Episodes Grid Desktop Optimized -->
+                        <div class="row g-3">
                             {% for ep in s.episodes %}
-                                <div class="ep-box">
-                                    <!-- EPISODE POSTER INCLUDED HERE -->
-                                    <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-2" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
-                                        <div class="d-flex align-items-center gap-3">
-                                            <!-- Thumb Image: Episode Poster fallback to main backdrop fallback to portrait -->
-                                            <img src="{{ ep.poster or m.backdrop or m.poster }}" style="width: 75px; height: 42px; object-fit: cover; border-radius: 4px; border: 1px solid #2d3748;" onerror="this.src='{{ m.backdrop or m.poster }}'">
-                                            <span class="fs-6"><i class="fas fa-tv me-1"></i> Season {{ "%02d"|format(s.season|int) }} - Episode {{ "%02d"|format(ep.episode|int) }}</span> 
-                                        </div>
-                                        <i class="fas fa-chevron-down ms-2"></i>
-                                    </button>
-                                    
-                                    <div id="links_S{{s.season}}_E{{ep.episode}}" class="collapse mt-2">
-                                        <div class="d-flex flex-column gap-2">
-                                            {% if ep.links %}
-                                                {% for group_name, items in ep.links|groupby('name') %}
-                                                <div class="border border-secondary rounded p-2" style="background: rgba(0,0,0,0.3);">
-                                                    <button class="btn btn-sm btn-outline-warning w-100 fw-bold d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#col_s{{s.season}}_e{{ep.episode}}_g{{loop.index}}">
-                                                        <span>
-                                                            {% if 'online' in group_name.lower() or 'watch' in group_name.lower() %}<i class="fas fa-play-circle"></i>
-                                                            {% else %}<i class="fas fa-download"></i>{% endif %}
-                                                            {{ group_name }}
-                                                        </span>
-                                                        <i class="fas fa-chevron-down"></i>
-                                                    </button>
-                                                    <div class="collapse mt-2" id="col_s{{s.season}}_e{{ep.episode}}_g{{loop.index}}">
-                                                        <div class="d-flex flex-column gap-2">
-                                                            {% for item in items %}
-                                                            <a href="{{ item.url }}" onclick="checkAd(event, '{{ item.url }}')" class="btn btn-sm btn-primary w-100 d-flex justify-content-between align-items-center">
-                                                                <span><i class="fas fa-link"></i> Click to Open</span>
-                                                                {% if item.quality %}<span class="badge bg-light text-dark">{{ item.quality }}</span>{% endif %}
-                                                            </a>
-                                                            {% endfor %}
+                                <div class="col-12 col-xl-6">
+                                    <div class="ep-box p-3">
+                                        <!-- EPISODE POSTER INCLUDED HERE -->
+                                        <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-3" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
+                                            <div class="d-flex align-items-center gap-4">
+                                                <!-- Thumb Image: Episode Poster fallback to main backdrop fallback to portrait -->
+                                                <img src="{{ ep.poster or m.backdrop or m.poster }}" class="shadow-sm" style="width: 140px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #2d3748;" onerror="this.src='{{ m.backdrop or m.poster }}'">
+                                                <div>
+                                                    <span class="fs-5 text-white d-block mb-1"><i class="fas fa-tv me-2"></i> 
+                                                        {% if ep.ep_title %}
+                                                            {{ ep.ep_title }}
+                                                        {% else %}
+                                                            Season {{ "%02d"|format(s.season|int) }} - Episode {{ "%02d"|format(ep.episode|int) }}
+                                                        {% endif %}
+                                                    </span>
+                                                    {% if ep.ep_title %}
+                                                        <small class="text-primary opacity-75">S{{ "%02d"|format(s.season|int) }} E{{ "%02d"|format(ep.episode|int) }}</small>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            <i class="fas fa-chevron-down fs-4 ms-2"></i>
+                                        </button>
+                                        
+                                        <div id="links_S{{s.season}}_E{{ep.episode}}" class="collapse mt-3">
+                                            <div class="d-flex flex-column gap-3">
+                                                {% if ep.links %}
+                                                    {% for group_name, items in ep.links|groupby('name') %}
+                                                    <div class="border border-secondary rounded p-3" style="background: rgba(0,0,0,0.4);">
+                                                        <button class="btn btn-outline-warning w-100 fw-bold d-flex justify-content-between align-items-center p-2 fs-5" data-bs-toggle="collapse" data-bs-target="#col_s{{s.season}}_e{{ep.episode}}_g{{loop.index}}">
+                                                            <span>
+                                                                {% if 'online' in group_name.lower() or 'watch' in group_name.lower() %}<i class="fas fa-play-circle"></i>
+                                                                {% else %}<i class="fas fa-download"></i>{% endif %}
+                                                                {{ group_name }}
+                                                            </span>
+                                                            <i class="fas fa-chevron-down"></i>
+                                                        </button>
+                                                        <div class="collapse mt-3" id="col_s{{s.season}}_e{{ep.episode}}_g{{loop.index}}">
+                                                            <div class="row g-2">
+                                                                {% for item in items %}
+                                                                <div class="col-md-6">
+                                                                    <a href="{{ item.url }}" onclick="checkAd(event, '{{ item.url }}')" class="btn btn-primary w-100 d-flex justify-content-between align-items-center p-2">
+                                                                        <span><i class="fas fa-link"></i> Click to Open</span>
+                                                                        {% if item.quality %}<span class="badge bg-light text-dark">{{ item.quality }}</span>{% endif %}
+                                                                    </a>
+                                                                </div>
+                                                                {% endfor %}
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
-                                                {% endfor %}
-                                            {% else %}
-                                                <span class="text-muted small text-center w-100 d-block border border-secondary rounded p-2">No links available</span>
-                                            {% endif %}
+                                                    {% endfor %}
+                                                {% else %}
+                                                    <span class="text-muted text-center w-100 d-block border border-secondary rounded p-3 fs-5">No links available</span>
+                                                {% endif %}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -712,7 +825,20 @@ def admin_login():
     <!DOCTYPE html><html data-bs-theme="dark"><head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Admin Login</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script>
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && (event.key === '=' || event.key === '-' || event.key === '0')) {
+                event.preventDefault();
+            }
+        });
+        document.addEventListener('wheel', function(event) {
+            if (event.ctrlKey) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+    </script>
+    </head>
     <body style="background:#0b0f19;" class="d-flex justify-content-center align-items-center vh-100">
         <div class="card p-4 shadow-lg border-primary" style="background:#151b2b; width: 350px;">
             <h3 class="text-center text-white mb-4">Admin Login</h3>
@@ -773,13 +899,11 @@ def admin_dashboard():
 @login_required
 def admin_settings():
     if request.method == 'POST':
-        # Clear Home Cache on Setting changes
         clear_cache()
 
         d_links = request.form.getlist('direct_links[]')
         d_links = [url for url in d_links if url.strip()]
         
-        # Promos Processing
         p_texts = request.form.getlist('promo_text[]')
         p_images = request.form.getlist('promo_image[]')
         p_urls = request.form.getlist('promo_url[]')
@@ -800,9 +924,10 @@ def admin_settings():
             "tmdb_api_key": request.form.get('tmdb_api_key'),
             "admin_user": request.form.get('admin_user'),
             "admin_pass": request.form.get('admin_pass'),
-            "limit_movie": request.form.get('limit_movie', '10'),
-            "limit_series": request.form.get('limit_series', '10'),
-            "limit_drama": request.form.get('limit_drama', '10'),
+            "limit_movie": request.form.get('limit_movie', '12'),
+            "limit_series": request.form.get('limit_series', '12'),
+            "limit_drama": request.form.get('limit_drama', '12'),
+            "limit_episode": request.form.get('limit_episode', '12'),
             "promos": promos
         }})
         flash("সেটিংস এবং অ্যাডস সফলভাবে আপডেট হয়েছে!")
@@ -818,17 +943,21 @@ def admin_settings():
         
         <h5 class="text-danger border-bottom border-secondary pb-2"><i class="fas fa-layer-group"></i> Homepage Category Post Limits</h5>
         <div class="row mb-4 bg-dark p-3 rounded border border-secondary">
-            <div class="col-md-4 mb-2">
+            <div class="col-md-3 mb-2">
+                <label class="text-white">Episodes Section</label>
+                <input type="number" name="limit_episode" class="form-control" value="{{ s.get('limit_episode', '12') }}" min="1">
+            </div>
+            <div class="col-md-3 mb-2">
                 <label class="text-white">Movie Section Limit</label>
-                <input type="number" name="limit_movie" class="form-control" value="{{ s.get('limit_movie', '10') }}" min="1">
+                <input type="number" name="limit_movie" class="form-control" value="{{ s.get('limit_movie', '12') }}" min="1">
             </div>
-            <div class="col-md-4 mb-2">
+            <div class="col-md-3 mb-2">
                 <label class="text-white">Series Section Limit</label>
-                <input type="number" name="limit_series" class="form-control" value="{{ s.get('limit_series', '10') }}" min="1">
+                <input type="number" name="limit_series" class="form-control" value="{{ s.get('limit_series', '12') }}" min="1">
             </div>
-            <div class="col-md-4 mb-2">
+            <div class="col-md-3 mb-2">
                 <label class="text-white">Drama Section Limit</label>
-                <input type="number" name="limit_drama" class="form-control" value="{{ s.get('limit_drama', '10') }}" min="1">
+                <input type="number" name="limit_drama" class="form-control" value="{{ s.get('limit_drama', '12') }}" min="1">
             </div>
         </div>
 
@@ -1078,7 +1207,6 @@ def add_movie():
                 date = res.get('release_date') if m_type == 'movie' else res.get('first_air_date')
                 
                 poster = f"https://image.tmdb.org/t/p/w500{res.get('poster_path')}" if res.get('poster_path') else ""
-                # Added Backdrop Import
                 backdrop = f"https://image.tmdb.org/t/p/w780{res.get('backdrop_path')}" if res.get('backdrop_path') else poster
                 
                 desc = res.get('overview', '')
@@ -1102,17 +1230,17 @@ def add_movie():
                         s_num = s.get('season_number')
                         if s_num > 0:
                             episodes = []
-                            # Fetch Extra Season Details for Episode Posters
+                            # Fetch Extra Season Details for Episode Posters and Names
                             try:
                                 s_res = requests.get(f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{s_num}?api_key={api_key}").json()
                                 for e_data in s_res.get('episodes', []):
                                     e_num = e_data.get('episode_number')
                                     e_still = e_data.get('still_path')
-                                    # Episode Thumbnail Poster
+                                    e_title = e_data.get('name', '') # Extra: Episode Name
                                     ep_poster = f"https://image.tmdb.org/t/p/w500{e_still}" if e_still else ""
-                                    episodes.append({"episode": e_num, "poster": ep_poster, "links": []})
+                                    episodes.append({"episode": e_num, "ep_title": e_title, "poster": ep_poster, "links": []})
                             except:
-                                episodes = [{"episode": e, "poster": "", "links": []} for e in range(1, s.get('episode_count') + 1)]
+                                episodes = [{"episode": e, "ep_title": "", "poster": "", "links": []} for e in range(1, s.get('episode_count') + 1)]
                                 
                             seasons.append({"season": s_num, "episodes": episodes})
                     new_doc['seasons'] = seasons
@@ -1145,7 +1273,7 @@ def add_movie():
             }
             
             if m_type in ['Series', 'Drama']:
-                new_doc['seasons'] = [{"season": 1, "episodes": [{"episode": 1, "poster": "", "links": links}]}]
+                new_doc['seasons'] = [{"season": 1, "episodes": [{"episode": 1, "ep_title": "", "poster": "", "links": links}]}]
                 new_doc['links'] = []
                 
             movies_col.insert_one(new_doc)
@@ -1345,7 +1473,8 @@ def edit_movie(id):
             seasons = movie.get('seasons', [])
             for s in seasons:
                 for ep in s['episodes']:
-                    # Update Episode Poster manually if changed
+                    # Update Episode Name & Poster manually if changed
+                    ep['ep_title'] = request.form.get(f"ep_title_S{s['season']}_E{ep['episode']}", "")
                     ep['poster'] = request.form.get(f"ep_poster_S{s['season']}_E{ep['episode']}", "")
                     
                     l_names = request.form.getlist(f"link_name_S{s['season']}_E{ep['episode']}[]")
@@ -1425,10 +1554,17 @@ def edit_movie(id):
                             <div class="accordion-body bg-black text-white rounded border border-secondary mt-1">
                                 {% for ep in s.episodes %}
                                     <div class="mb-3 p-3 border border-secondary rounded" style="background:#151b2b;">
-                                        <h5 class="text-warning">Episode {{ "%02d"|format(ep.episode|int) }}</h5>
+                                        <h5 class="text-warning mb-3">Episode {{ "%02d"|format(ep.episode|int) }}</h5>
                                         
-                                        <!-- Editable Episode Poster Field -->
-                                        <input type="text" name="ep_poster_S{{ s.season }}_E{{ ep.episode }}" class="form-control form-control-sm mb-3" value="{{ ep.poster | default('') }}" placeholder="Episode Thumbnail URL (Optional)">
+                                        <div class="row">
+                                            <div class="col-md-6 mb-2">
+                                                <input type="text" name="ep_title_S{{ s.season }}_E{{ ep.episode }}" class="form-control form-control-sm" value="{{ ep.ep_title | default('') }}" placeholder="Episode Name / Title (Optional)">
+                                            </div>
+                                            <div class="col-md-6 mb-2">
+                                                <!-- Editable Episode Poster Field -->
+                                                <input type="text" name="ep_poster_S{{ s.season }}_E{{ ep.episode }}" class="form-control form-control-sm" value="{{ ep.poster | default('') }}" placeholder="Episode Thumbnail URL (Optional)">
+                                            </div>
+                                        </div>
                                         
                                         <div id="links_S{{ s.season }}_E{{ ep.episode }}">
                                             {% for link in ep.links %}
