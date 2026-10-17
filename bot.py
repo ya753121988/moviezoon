@@ -703,31 +703,29 @@ def movie_details(id):
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="row mt-3">
         <!-- FULL WIDTH LANDSCAPE BANNER HEADER FIX -->
-        <div class="col-12 mb-5">
+        <div class="col-12 mb-3">
             <div class="position-relative w-100 shadow-lg border border-secondary" style="aspect-ratio: 16/9; max-height: 60vh; border-radius: 12px; overflow: hidden; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat;">
-                <!-- Gradient Overlay -->
-                <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(0deg, rgba(11,15,25,1) 0%, rgba(11,15,25,0.7) 40%, rgba(11,15,25,0) 100%); height: 100%;"></div>
-                
-                {% if m.badge %}<span class="movie-badge shadow-lg" style="font-size: 18px; padding: 8px 25px; top: 20px; right: 20px;">{{ m.badge }}</span>{% endif %}
-                
-                <div style="position: absolute; bottom: 30px; left: 30px; right: 30px;">
-                    <h1 class="fw-bold text-white mb-3 display-4" style="text-shadow: 2px 2px 5px #000;">{{ m.title }}</h1>
-                    <div class="d-flex flex-wrap gap-2">
-                        <span class="badge bg-danger fs-5 shadow-sm px-3 py-2"><i class="fas fa-video"></i> {{ m.type }}</span>
-                        {% if m.date %}<span class="badge bg-info text-dark fs-5 shadow-sm px-3 py-2"><i class="far fa-calendar-alt"></i> {{ m.date[:4] }}</span>{% endif %}
-                        {% if m.quality %}<span class="badge bg-primary fs-5 shadow-sm px-3 py-2">{{ m.quality }}</span>{% endif %}
-                        {% if m.language %}<span class="badge bg-success fs-5 shadow-sm px-3 py-2"><i class="fas fa-language"></i> {{ m.language }}</span>{% endif %}
-                        {% for cat in m.categories %}
-                            <span class="badge bg-secondary fs-5 shadow-sm px-3 py-2">{{ cat }}</span>
-                        {% endfor %}
-                        <span class="badge bg-dark border border-secondary fs-5 shadow-sm px-3 py-2"><i class="fas fa-eye text-primary"></i> Views: {{ m.views }}</span>
-                    </div>
-                </div>
+                {% if m.badge %}<span class="movie-badge shadow-lg" style="font-size: 16px; padding: 6px 20px; top: 15px; right: 15px;">{{ m.badge }}</span>{% endif %}
+            </div>
+        </div>
+        
+        <!-- TITLE AND TAGS MOVED OUTSIDE POSTER FOR CLEAN VIEW -->
+        <div class="col-12 mb-4">
+            <h1 class="fw-bold text-white mb-3 mt-2" style="text-shadow: 1px 1px 3px #000;">{{ m.title }}</h1>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <span class="badge bg-danger fs-6 shadow-sm px-3 py-2"><i class="fas fa-video"></i> {{ m.type }}</span>
+                {% if m.date %}<span class="badge bg-info text-dark fs-6 shadow-sm px-3 py-2"><i class="far fa-calendar-alt"></i> {{ m.date[:4] }}</span>{% endif %}
+                {% if m.quality %}<span class="badge bg-primary fs-6 shadow-sm px-3 py-2">{{ m.quality }}</span>{% endif %}
+                {% if m.language %}<span class="badge bg-success fs-6 shadow-sm px-3 py-2"><i class="fas fa-language"></i> {{ m.language }}</span>{% endif %}
+                {% for cat in m.categories %}
+                    <span class="badge bg-secondary fs-6 shadow-sm px-3 py-2">{{ cat }}</span>
+                {% endfor %}
+                <span class="badge bg-dark border border-secondary fs-6 shadow-sm px-3 py-2"><i class="fas fa-eye text-primary"></i> Views: {{ m.views }}</span>
             </div>
         </div>
         
         <div class="col-12">
-            <p class="text-light p-4 rounded shadow-sm fs-5" style="background: #151b2b; line-height: 1.8; border-left: 5px solid #007bff; border-bottom: 1px solid #2d3748; border-right: 1px solid #2d3748; border-top: 1px solid #2d3748;">{{ m.description }}</p>
+            <p class="text-light p-4 rounded shadow-sm fs-6" style="background: #151b2b; line-height: 1.8; border-left: 5px solid #007bff; border-bottom: 1px solid #2d3748; border-right: 1px solid #2d3748; border-top: 1px solid #2d3748;">{{ m.description }}</p>
             <hr class="border-secondary my-5">
             
             {% if m.type == 'Movie' %}
