@@ -1005,7 +1005,7 @@ def admin_dashboard():
     return render_admin(html, tm=total_movies, ts=total_series, tv=total_views)
 
 
-# 🚀 NEW FEATURE: UNLIMITED CUSTOM DOMAINS MANAGEMENT (.com / .xyz)
+# 🚀 NEW FEATURE: UNLIMITED CUSTOM DOMAINS MANAGEMENT (.com / .xyz) & DNS GENERATOR
 @app.route('/admin/domains', methods=['GET', 'POST'])
 @login_required
 def manage_domains():
@@ -1013,10 +1013,12 @@ def manage_domains():
     if not tenant.get('is_main'):
         return "<h2 style='color:red;'>Access Denied. Only Main Admin can manage Domains.</h2>", 403
         
+    dns_info = None # নতুন ডোমেন এড করলে DNS ইনফো দেখানোর জন্য
+        
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
-            host = request.form.get('host').strip()
+            host = request.form.get('host').strip().lower()
             # Remove http:// or www. if typed accidentally
             host = host.replace("http://", "").replace("https://", "").replace("www.", "").strip('/')
             
@@ -1038,7 +1040,14 @@ def manage_domains():
                     "expire_at": expire_at,
                     "settings": tenant.get('settings', {}) # Copy initial settings from main site
                 })
-                flash(f"ডোমেন {host} সফলভাবে তৈরি হয়েছে! ক্লায়েন্টকে A Record পয়েন্ট করতে বলুন।")
+                
+                # ডোমেন এড হওয়ার পর DNS রেকর্ড জেনারেট করা হচ্ছে (For Vercel)
+                dns_info = {
+                    "domain": host,
+                    "a_record": "76.76.21.21", 
+                    "cname": "cname.vercel-dns.com"
+                }
+                flash(f"ডোমেন {host} সফলভাবে ডাটাবেসে যুক্ত হয়েছে! দয়া করে DNS রেকর্ডগুলো সেটআপ করুন।")
                 
         elif action == 'renew':
             tenant_id = request.form.get('tenant_id')
@@ -1052,14 +1061,14 @@ def manage_domains():
                 new_expire = current_expire + (months * 30 * 24 * 3600)
                 domains_col.update_one({"_id": ObjectId(tenant_id)}, {"$set": {"expire_at": new_expire}, "$inc": {"price_paid": int(price)}})
                 flash("ডোমেনটির মেয়াদ সফলভাবে বাড়ানো হয়েছে!")
+                return redirect(url_for('manage_domains'))
                 
         elif action == 'delete':
             tenant_id = request.form.get('tenant_id')
             domains_col.delete_one({"_id": ObjectId(tenant_id)})
             flash("ডোমেনটি মুছে ফেলা হয়েছে!")
+            return redirect(url_for('manage_domains'))
             
-        return redirect(url_for('manage_domains'))
-        
     domains_list = list(domains_col.find({"is_main": False}).sort('_id', -1))
     current_time = time.time()
     
@@ -1068,11 +1077,36 @@ def manage_domains():
         return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
 
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">কাস্টম ডোমেন (.com/.xyz) ম্যানেজমেন্ট</h2>
+    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">কাস্টম ডোমেন ও DNS ম্যানেজমেন্ট</h2>
     
-    <div class="alert alert-info border-secondary bg-dark text-white">
-        <i class="fas fa-info-circle text-info"></i> <b>খুবই গুরুত্বপূর্ণ:</b> এখান থেকে ডোমেন এড করার পর, ক্লায়েন্টকে অবশ্যই তার ডোমেন প্রোভাইডার (Cloudflare, Namecheap ইত্যাদি) থেকে <b>A Record</b> এ আপনার সার্ভারের IP এড্রেস বসাতে হবে। তবেই ডোমেনটি লাইভ হবে!
+    {% if dns_info %}
+    <!-- 🚀 ডোমেন এড করার পর DNS রেকর্ড শো করবে -->
+    <div class="card p-4 mb-4 border-warning shadow" style="background:#1e2738;">
+        <h4 class="text-warning fw-bold mb-3"><i class="fas fa-server"></i> ডোমেন কানেক্ট করার নিয়ম</h4>
+        <p class="text-white"><b>{{ dns_info.domain }}</b> সাইটটি লাইভ করার জন্য ক্লায়েন্টকে তার ডোমেন প্যানেলে (Cloudflare/Namecheap) গিয়ে নিচের রেকর্ড দুটি বসাতে বলুন:</p>
+        
+        <div class="table-responsive">
+            <table class="table table-bordered table-dark text-center align-middle">
+                <thead><tr class="text-info"><th>Type</th><th>Name / Host</th><th>Value / Target</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><span class="badge bg-primary fs-6">A Record</span></td>
+                        <td class="fw-bold">@</td>
+                        <td class="text-success fw-bold fs-5">{{ dns_info.a_record }}</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge bg-info fs-6">CNAME</span></td>
+                        <td class="fw-bold">www</td>
+                        <td class="text-warning fw-bold fs-5">{{ dns_info.cname }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="alert alert-danger p-2 mt-2">
+            <i class="fas fa-exclamation-triangle"></i> <b>জরুরি:</b> রেকর্ড বসানোর পর আপনার <b>Vercel Dashboard</b>-এ গিয়ে <b>Settings > Domains</b> থেকে ডোমেনটি ({{ dns_info.domain }}) Add করে দিন। তবেই সাইটটি পুরোপুরি লাইভ হবে!
+        </div>
     </div>
+    {% endif %}
 
     <div class="card p-4 mb-4 shadow border-success" style="background:#151b2b;">
         <h4 class="text-success fw-bold mb-3"><i class="fas fa-plus"></i> নতুন ডোমেন এড করুন</h4>
@@ -1085,7 +1119,7 @@ def manage_domains():
                 <div class="col-md-2 mb-3"><label>Price Paid (৳)</label><input type="number" name="price" class="form-control" value="0"></div>
                 <div class="col-md-2 mb-3"><label>Duration (Months)</label><input type="number" name="months" class="form-control" value="1" min="1"></div>
             </div>
-            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">ডোমেন তৈরি করুন</button>
+            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Add Domain</button>
         </form>
     </div>
 
@@ -1140,8 +1174,7 @@ def manage_domains():
         </div>
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
-    return render_admin(html, domains_list=domains_list, format_time=format_time, current_time=current_time)
-
+    return render_admin(html, domains_list=domains_list, format_time=format_time, current_time=current_time, dns_info=dns_info)
 
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @login_required
