@@ -855,7 +855,7 @@ def movie_details(id):
                                 <div class="col-12 col-xl-6">
                                     <div class="ep-box p-3">
                                         <!-- EPISODE POSTER INCLUDED HERE -->
-                                        <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-3" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
+                                        <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-3" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}>
                                             <div class="d-flex align-items-center gap-4">
                                                 <!-- Thumb Image: Episode Poster fallback to main backdrop fallback to portrait -->
                                                 <img src="{{ ep.poster or m.backdrop or m.poster }}" class="shadow-sm" style="width: 140px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #2d3748;" onerror="this.src='{{ m.backdrop or m.poster }}'">
@@ -1005,6 +1005,43 @@ def admin_dashboard():
     return render_admin(html, tm=total_movies, ts=total_series, tv=total_views)
 
 
+# ==========================================
+# VERCEL API FUNCTIONS FOR AUTO DOMAIN ADD/REMOVE
+# ==========================================
+def add_domain_to_vercel(domain):
+    VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN", "your_vercel_token_here")
+    PROJECT_ID = os.environ.get("VERCEL_PROJECT_ID", "your_project_id_here")
+    
+    if VERCEL_TOKEN == "your_vercel_token_here" or not VERCEL_TOKEN:
+        return False, "Vercel Token বা Project ID সেট করা নেই!"
+
+    headers = {
+        "Authorization": f"Bearer {VERCEL_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    url = f"https://api.vercel.com/v10/projects/{PROJECT_ID}/domains"
+    try:
+        res = requests.post(url, headers=headers, json={"name": domain})
+        if res.status_code in [200, 201]: 
+            return True, "API Success: ভার্সেলে ডোমেইন অটোমেটিক এড হয়েছে!"
+        else: 
+            return False, f"API Error: {res.json().get('error', {}).get('message', 'Unknown Error')}"
+    except Exception as e:
+        return False, str(e)
+
+def remove_domain_from_vercel(domain):
+    VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN", "your_vercel_token_here")
+    PROJECT_ID = os.environ.get("VERCEL_PROJECT_ID", "your_project_id_here")
+    if VERCEL_TOKEN == "your_vercel_token_here" or not VERCEL_TOKEN: 
+        return
+    headers = {"Authorization": f"Bearer {VERCEL_TOKEN}"}
+    url = f"https://api.vercel.com/v9/projects/{PROJECT_ID}/domains/{domain}"
+    try: 
+        requests.delete(url, headers=headers)
+    except: 
+        pass
+
+
 # 🚀 NEW FEATURE: UNLIMITED CUSTOM DOMAINS MANAGEMENT (.com / .xyz) & DNS GENERATOR
 @app.route('/admin/domains', methods=['GET', 'POST'])
 @login_required
@@ -1041,13 +1078,18 @@ def manage_domains():
                     "settings": tenant.get('settings', {}) # Copy initial settings from main site
                 })
                 
+                # 🚀 Vercel API Call - Auto Add Domain
+                api_success, api_msg = add_domain_to_vercel(host)
+                
                 # ডোমেন এড হওয়ার পর DNS রেকর্ড জেনারেট করা হচ্ছে (For Vercel)
                 dns_info = {
                     "domain": host,
                     "a_record": "76.76.21.21", 
-                    "cname": "cname.vercel-dns.com"
+                    "cname": "cname.vercel-dns.com",
+                    "api_status": api_msg,
+                    "api_success": api_success
                 }
-                flash(f"ডোমেন {host} সফলভাবে ডাটাবেসে যুক্ত হয়েছে! দয়া করে DNS রেকর্ডগুলো সেটআপ করুন।")
+                flash(f"ডোমেন {host} সফলভাবে ডাটাবেসে যুক্ত হয়েছে!")
                 
         elif action == 'renew':
             tenant_id = request.form.get('tenant_id')
@@ -1065,8 +1107,13 @@ def manage_domains():
                 
         elif action == 'delete':
             tenant_id = request.form.get('tenant_id')
+            t = domains_col.find_one({"_id": ObjectId(tenant_id)})
+            if t:
+                # 🚀 Vercel API Call - Auto Remove Domain
+                remove_domain_from_vercel(t['host'])
+            
             domains_col.delete_one({"_id": ObjectId(tenant_id)})
-            flash("ডোমেনটি মুছে ফেলা হয়েছে!")
+            flash("ডোমেনটি সফলভাবে মুছে ফেলা হয়েছে!")
             return redirect(url_for('manage_domains'))
             
     domains_list = list(domains_col.find({"is_main": False}).sort('_id', -1))
@@ -1102,9 +1149,18 @@ def manage_domains():
                 </tbody>
             </table>
         </div>
-        <div class="alert alert-danger p-2 mt-2">
-            <i class="fas fa-exclamation-triangle"></i> <b>জরুরি:</b> রেকর্ড বসানোর পর আপনার <b>Vercel Dashboard</b>-এ গিয়ে <b>Settings > Domains</b> থেকে ডোমেনটি ({{ dns_info.domain }}) Add করে দিন। তবেই সাইটটি পুরোপুরি লাইভ হবে!
+        
+        <!-- API STATUS ALERT -->
+        {% if dns_info.api_success %}
+        <div class="alert alert-success p-2 mt-2">
+            <i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে না। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!
         </div>
+        {% else %}
+        <div class="alert alert-danger p-2 mt-2">
+            <i class="fas fa-exclamation-triangle"></i> <b>API Failed:</b> {{ dns_info.api_status }}<br>
+            <i>(আপনাকে হয়তো ডোমেইনটি ম্যানুয়ালি Vercel Dashboard-এ গিয়ে Settings > Domains থেকে Add করতে হবে।)</i>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -1119,7 +1175,7 @@ def manage_domains():
                 <div class="col-md-2 mb-3"><label>Price Paid (৳)</label><input type="number" name="price" class="form-control" value="0"></div>
                 <div class="col-md-2 mb-3"><label>Duration (Months)</label><input type="number" name="months" class="form-control" value="1" min="1"></div>
             </div>
-            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Add Domain</button>
+            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Auto Add to Vercel</button>
         </form>
     </div>
 
@@ -1161,7 +1217,7 @@ def manage_domains():
                                 <button type="submit" class="btn btn-sm btn-primary fw-bold">Renew</button>
                             </form>
                             <!-- Delete System -->
-                            <form method="POST" class="d-inline ms-2" onsubmit="return confirm('ডোমেনটি কি ডিলেট করতে চান?');">
+                            <form method="POST" class="d-inline ms-2" onsubmit="return confirm('ডোমেনটি কি ডিলেট করতে চান? এটি Vercel থেকেও ডিলেট হয়ে যাবে!');">
                                 <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
