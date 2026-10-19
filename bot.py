@@ -54,6 +54,8 @@ if domains_col.count_documents({}) == 0:
         "expire_at": 20000000000, # Never expires
         "price_paid": 0,
         "settings": old_settings if old_settings else {
+            "site_name": "DooPlay Pro",
+            "site_logo": "",
             "ad_status_banner": "off",
             "ad_status_direct": "off",
             "limits": {"Movie": "12", "Series": "12", "Drama": "12", "Anime": "12", "Episode": "12"}
@@ -108,7 +110,8 @@ def render_frontend(html, page_name, **kwargs):
 
 def render_admin(html, **kwargs):
     tenant = get_tenant()
-    return render_template_string(html, is_main=tenant.get('is_main', False), db=db, **kwargs)
+    settings = tenant.get('settings', {})
+    return render_template_string(html, is_main=tenant.get('is_main', False), db=db, settings=settings, **kwargs)
 
 # ==========================================
 # HTML Templates - FRONTEND (User Side)
@@ -119,7 +122,7 @@ FRONTEND_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DooPlay Pro - Movie Site</title>
+    <title>{{ settings.get('site_name', 'DooPlay Pro') }} - Movie Site</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
@@ -188,7 +191,14 @@ FRONTEND_HTML = """
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container-fluid px-3 px-md-5 d-flex flex-wrap align-items-center justify-content-between">
-            <a class="navbar-brand fw-bold me-auto fs-4" href="/"><i class="fas fa-play text-primary"></i> DooPlay</a>
+            <a class="navbar-brand fw-bold me-auto fs-4 d-flex align-items-center" href="/">
+                {% if settings.get('site_logo') %}
+                    <img src="{{ settings.get('site_logo') }}" alt="Logo" style="height: 35px; border-radius: 5px; margin-right: 8px;">
+                {% else %}
+                    <i class="fas fa-play text-primary me-2"></i>
+                {% endif %}
+                {{ settings.get('site_name', 'DooPlay') }}
+            </a>
             <form action="/search" method="GET" class="d-flex search-bar mx-2 mx-lg-auto order-3 order-lg-2 mt-2 mt-lg-0 w-100">
                 <input class="form-control me-2 bg-dark text-white border-secondary" type="search" name="q" placeholder="Search Movies, Series..." required>
                 <button class="btn btn-primary px-4" type="submit"><i class="fas fa-search"></i></button>
@@ -209,6 +219,11 @@ FRONTEND_HTML = """
     </nav>
     
     <div class="container-fluid px-3 px-md-5 mt-3">
+        <!-- 🚀 GLOBAL BACK BUTTON (Except Home Page) -->
+        {% if page_name != 'home' %}
+            <button onclick="history.back()" class="btn btn-outline-light btn-sm mb-3 fw-bold shadow-sm"><i class="fas fa-arrow-left"></i> Back</button>
+        {% endif %}
+
         {% if settings.get('ad_header') %}
             <div class="w-100 text-center mb-3">{{ settings.get('ad_header') | safe }}</div>
         {% endif %}
@@ -304,7 +319,7 @@ ADMIN_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Admin Panel - DooPlay Pro</title>
+    <title>Admin Panel - {{ settings.get('site_name', 'DooPlay Pro') }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
@@ -336,7 +351,14 @@ ADMIN_HTML = """
     <div class="container-fluid">
         <div class="row">
             <div class="col-md-2 sidebar d-none d-md-block">
-                <h4 class="text-center text-white mb-4 fw-bold"><i class="fas fa-play text-primary"></i> Admin Pro</h4>
+                <h4 class="text-center text-white mb-4 fw-bold">
+                    {% if settings.get('site_logo') %}
+                        <img src="{{ settings.get('site_logo') }}" alt="Logo" style="height: 40px; border-radius: 5px; margin-bottom: 5px;"><br>
+                    {% else %}
+                        <i class="fas fa-play text-primary"></i> 
+                    {% endif %}
+                    {{ settings.get('site_name', 'Admin Pro') }}
+                </h4>
                 <a href="/admin"><i class="fas fa-tachometer-alt me-2"></i> ড্যাশবোর্ড</a>
                 
                 <!-- 🚀 NEW FEATURE: ONLY MAIN ADMIN SEES DOMAINS MENU -->
@@ -353,7 +375,14 @@ ADMIN_HTML = """
             </div>
             
             <div class="col-12 d-md-none bg-dark p-3 d-flex justify-content-between align-items-center mb-3 border-bottom border-secondary">
-                <h5 class="m-0 fw-bold"><i class="fas fa-play text-primary"></i> Admin Pro</h5>
+                <h5 class="m-0 fw-bold">
+                    {% if settings.get('site_logo') %}
+                        <img src="{{ settings.get('site_logo') }}" alt="Logo" style="height: 25px; border-radius: 3px; margin-right: 5px;">
+                    {% else %}
+                        <i class="fas fa-play text-primary"></i> 
+                    {% endif %}
+                    {{ settings.get('site_name', 'Admin Pro') }}
+                </h5>
                 <select class="form-select w-50" onchange="location = this.value;">
                     <option value="/admin">ড্যাশবোর্ড</option>
                     {% if is_main %}
@@ -369,6 +398,9 @@ ADMIN_HTML = """
             </div>
 
             <div class="col-md-10 content">
+                <!-- 🚀 ADMIN BACK BUTTON -->
+                <button onclick="history.back()" class="btn btn-outline-secondary btn-sm mb-3 fw-bold shadow-sm"><i class="fas fa-arrow-left"></i> Back</button>
+
                 {% if get_flashed_messages() %}
                     {% for msg in get_flashed_messages() %}
                         <div class="alert alert-success alert-dismissible fade show" style="background:#198754; color:#fff; border:none;">
@@ -855,7 +887,7 @@ def movie_details(id):
                                 <div class="col-12 col-xl-6">
                                     <div class="ep-box p-3">
                                         <!-- EPISODE POSTER INCLUDED HERE -->
-                                        <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-3" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}>
+                                        <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-3" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
                                             <div class="d-flex align-items-center gap-4">
                                                 <!-- Thumb Image: Episode Poster fallback to main backdrop fallback to portrait -->
                                                 <img src="{{ ep.poster or m.backdrop or m.poster }}" class="shadow-sm" style="width: 140px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #2d3748;" onerror="this.src='{{ m.backdrop or m.poster }}'">
@@ -1254,6 +1286,8 @@ def admin_settings():
             limits[t] = request.form.get(f"limit_{t}", "12")
         
         new_settings = {
+            "site_name": request.form.get('site_name', 'DooPlay Pro'),
+            "site_logo": request.form.get('site_logo', ''),
             "ad_status_banner": request.form.get('ad_status_banner'),
             "ad_status_direct": request.form.get('ad_status_direct'),
             "ad_banner_home_desktop": request.form.get('ad_banner_home_desktop'),
@@ -1291,6 +1325,18 @@ def admin_settings():
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সেটিংস ও এডস প্যানেল (Domain: <span class="text-warning">{{ t_host }}</span>)</h2>
     <form method="POST" class="card p-4">
         
+        <h5 class="text-white border-bottom border-secondary pb-2"><i class="fas fa-globe"></i> General Branding (For this Domain)</h5>
+        <div class="row mb-4 bg-dark p-3 rounded border border-secondary">
+            <div class="col-md-6 mb-2">
+                <label class="text-white">Site Name (সাইটের নাম)</label>
+                <input type="text" name="site_name" class="form-control" value="{{ s.get('site_name', 'DooPlay Pro') }}" required>
+            </div>
+            <div class="col-md-6 mb-2">
+                <label class="text-white">Site Logo URL (লোগো - Optional)</label>
+                <input type="url" name="site_logo" class="form-control" value="{{ s.get('site_logo', '') }}" placeholder="https://... (Optional)">
+            </div>
+        </div>
+
         <h5 class="text-danger border-bottom border-secondary pb-2"><i class="fas fa-layer-group"></i> Homepage Category Post Limits</h5>
         <div class="row mb-4 bg-dark p-3 rounded border border-secondary">
             <div class="col-md-3 mb-2">
