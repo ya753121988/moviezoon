@@ -53,7 +53,7 @@ if domains_col.count_documents({}) == 0:
         "admin_pass": admin_pass,
         "expire_at": 20000000000, # Never expires
         "price_paid": 0,
-        "hidden_movies": [], 
+        "hidden_movies": [], # 🚀 NEW: Hidden/Deleted Movies for specific tenant
         "settings": old_settings if old_settings else {
             "site_name": "DooPlay Pro",
             "site_logo": "",
@@ -340,20 +340,24 @@ FRONTEND_HTML = """
             if (dist <= 0) {
                 tText.innerHTML = "<span class='text-danger'>EXPIRED! Locking...</span>";
                 tBox.style.display = "block";
-                setTimeout(function(){ location.reload(); }, 1500); // Trigger Lock Screen
+                setTimeout(function(){ location.reload(); }, 1500); // 🚀 LIVE RELOAD TO LOCK SCREEN
                 return;
             }
             
             tBox.style.display = "block";
-            var d = Math.floor(dist / (1000 * 60 * 60 * 24));
+            var y = Math.floor(dist / (1000 * 60 * 60 * 24 * 365));
+            var mo = Math.floor((dist % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24 * 30));
+            var d = Math.floor((dist % (1000 * 60 * 60 * 24 * 30)) / (1000 * 60 * 60 * 24));
             var h = Math.floor((dist % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             var m = Math.floor((dist % (1000 * 60 * 60)) / (1000 * 60));
             var s = Math.floor((dist % (1000 * 60)) / 1000);
             
             var text = "";
-            if(d > 0) text += d + "d ";
+            if(y > 0) text += y + "y ";
+            if(mo > 0 || y > 0) text += mo + "mo ";
+            if(d > 0 || mo > 0 || y > 0) text += d + "d ";
             if(h > 0 || d > 0) text += h + "h ";
-            if(m > 0 || h > 0 || d > 0) text += m + "m ";
+            if(m > 0 || h > 0) text += m + "m ";
             text += s + "s";
             
             tText.innerHTML = text;
@@ -1240,12 +1244,11 @@ def manage_domains():
             
             t = domains_col.find_one({"_id": ObjectId(tenant_id)})
             if t:
-                current_expire = t.get('expire_at', time.time())
-                if current_expire < time.time(): current_expire = time.time()
-                new_expire = current_expire + add_secs
+                # 🚀 OVERWRITE EXACT EXPIRY FROM CURRENT TIME
+                new_expire = time.time() + add_secs
                 domains_col.update_one({"_id": ObjectId(tenant_id)}, {"$set": {"expire_at": new_expire}, "$inc": {"price_paid": price}})
                 clear_cache() # 🚀 CLEAR CACHE SO LOCK SCREEN APPLIES INSTANTLY
-                flash("ডোমেনটির মেয়াদ সফলভাবে বাড়ানো হয়েছে!")
+                flash("ডোমেনটির মেয়াদ সফলভাবে নতুন করে সেট করা হয়েছে!")
                 return redirect(url_for('manage_domains'))
                 
         elif action == 'delete':
@@ -1294,14 +1297,15 @@ def manage_domains():
                 <div class="col-md-2 mb-3"><label>Client Password</label><input type="text" name="admin_pass" class="form-control" required></div>
                 <div class="col-md-2 mb-3"><label>Price Paid (৳)</label><input type="number" name="price" class="form-control" value="0"></div>
             </div>
+            
             <label class="text-info fw-bold mb-2">Set Initial Duration:</label>
             <div class="row g-2 mb-3 bg-dark p-2 rounded border border-secondary">
-                <div class="col"><input type="number" name="years" class="form-control form-control-sm border-warning" placeholder="Years" value="0"></div>
-                <div class="col"><input type="number" name="months" class="form-control form-control-sm border-warning" placeholder="Months" value="0"></div>
-                <div class="col"><input type="number" name="days" class="form-control form-control-sm border-warning" placeholder="Days" value="0"></div>
-                <div class="col"><input type="number" name="hours" class="form-control form-control-sm border-warning" placeholder="Hours" value="0"></div>
-                <div class="col"><input type="number" name="mins" class="form-control form-control-sm border-warning" placeholder="Mins" value="0"></div>
-                <div class="col"><input type="number" name="secs" class="form-control form-control-sm border-warning" placeholder="Secs" value="0"></div>
+                <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text bg-secondary text-white border-warning">Yr</span><input type="number" name="years" class="form-control border-warning" value="0"></div></div>
+                <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text bg-secondary text-white border-warning">Mo</span><input type="number" name="months" class="form-control border-warning" value="0"></div></div>
+                <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text bg-secondary text-white border-warning">Dy</span><input type="number" name="days" class="form-control border-warning" value="0"></div></div>
+                <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text bg-secondary text-white border-warning">Hr</span><input type="number" name="hours" class="form-control border-warning" value="0"></div></div>
+                <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text bg-secondary text-white border-warning">Mn</span><input type="number" name="mins" class="form-control border-warning" value="0"></div></div>
+                <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text bg-secondary text-white border-warning">Sc</span><input type="number" name="secs" class="form-control border-warning" value="0"></div></div>
             </div>
             <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Add Domain</button>
         </form>
@@ -1311,7 +1315,7 @@ def manage_domains():
         <h4 class="text-info fw-bold mb-3"><i class="fas fa-list"></i> অল ডোমেন লিস্ট</h4>
         <div class="table-responsive">
             <table class="table table-dark table-hover align-middle border-secondary">
-                <thead><tr class="text-warning"><th>Domain / URL</th><th>User / Pass</th><th>Total Paid</th><th>Expire Date</th><th>Status</th><th>Action (Add More Time)</th></tr></thead>
+                <thead><tr class="text-warning"><th>Domain / URL</th><th>User / Pass</th><th>Total Paid</th><th>Expire Date</th><th>Status</th><th>Action (Set EXACT Expiry Time)</th></tr></thead>
                 <tbody>
                     {% for sub in domains_list %}
                     <tr>
@@ -1325,18 +1329,19 @@ def manage_domains():
                                 <input type="hidden" name="action" value="renew">
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
                                 
-                                <label class="text-white small mb-1">Add Time (Yr-Mo-Dy-Hr-Mn-Sc):</label>
-                                <div class="d-flex flex-wrap gap-1 mb-2">
-                                    <input type="number" name="years" class="form-control form-control-sm" style="width:60px;" placeholder="Yr" value="0" title="Years">
-                                    <input type="number" name="months" class="form-control form-control-sm" style="width:60px;" placeholder="Mo" value="0" title="Months">
-                                    <input type="number" name="days" class="form-control form-control-sm" style="width:60px;" placeholder="Dy" value="0" title="Days">
-                                    <input type="number" name="hours" class="form-control form-control-sm" style="width:60px;" placeholder="Hr" value="0" title="Hours">
-                                    <input type="number" name="mins" class="form-control form-control-sm" style="width:60px;" placeholder="Mn" value="0" title="Minutes">
-                                    <input type="number" name="secs" class="form-control form-control-sm" style="width:60px;" placeholder="Sc" value="0" title="Seconds">
+                                <label class="text-warning fw-bold small mb-2 d-block">Set New Expiry Duration from NOW:</label>
+                                <div class="row g-1 mb-2">
+                                    <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text px-1">Yr</span><input type="number" name="years" class="form-control px-1 text-center" value="0"></div></div>
+                                    <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text px-1">Mo</span><input type="number" name="months" class="form-control px-1 text-center" value="0"></div></div>
+                                    <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text px-1">Dy</span><input type="number" name="days" class="form-control px-1 text-center" value="0"></div></div>
+                                    <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text px-1">Hr</span><input type="number" name="hours" class="form-control px-1 text-center" value="0"></div></div>
+                                    <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text px-1">Mn</span><input type="number" name="mins" class="form-control px-1 text-center" value="0"></div></div>
+                                    <div class="col-4"><div class="input-group input-group-sm"><span class="input-group-text px-1">Sc</span><input type="number" name="secs" class="form-control px-1 text-center" value="0"></div></div>
                                 </div>
-                                <div class="d-flex justify-content-between">
+                                
+                                <div class="d-flex justify-content-between mt-2">
                                     <input type="number" name="price" class="form-control form-control-sm d-inline" style="width:80px;" value="0" placeholder="Price">
-                                    <button type="submit" class="btn btn-sm btn-primary fw-bold">Renew / Add Time</button>
+                                    <button type="submit" class="btn btn-sm btn-primary fw-bold">Set Time</button>
                                 </div>
                             </form>
                             <form method="POST" class="mt-2 text-end" onsubmit="return confirm('ডোমেনটি কি ডিলেট করতে চান? এটি Vercel থেকেও ডিলেট হয়ে যাবে!');">
