@@ -70,6 +70,33 @@ def get_tenant():
     if t: return t
     return domains_col.find_one({"is_main": True})
 
+# 🚀 NEW: GLOBAL EXPIRATION LOCK SCREEN HELPER
+def check_domain_expiration(tenant):
+    if not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time():
+        host = tenant.get('host', 'Domain')
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Site Locked - {host}</title>
+        </head>
+        <body style="background-color: #0b0f19; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; color: #fff;">
+            <div style="background: #151b2b; padding: 40px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.8); border: 1px solid #2d3748; max-width: 90%; width: 500px;">
+                <div style="font-size: 60px; margin-bottom: 20px;">🔒</div>
+                <h1 style="color: #ff4444; margin-top: 0; font-size: 26px; font-weight: bold;">সাবস্ক্রিপশন মেয়াদ শেষ!</h1>
+                <h3 style="color: #e2e8f0; font-size: 18px; margin-bottom: 20px;">আপনার সাইট <b>({host})</b> সাময়িকভাবে লক করা হয়েছে।</h3>
+                <div style="background: #1e2738; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 20px;">
+                    <p style="margin: 0; color: #cbd5e1; font-size: 15px; line-height: 1.6;">সাইটটি পুনরায় চালু করতে বা আনলক করার সময় বাড়াতে দয়া করে <b>মেইন এডমিনের</b> সাথে যোগাযোগ করুন।</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html
+    return None
+
 # Helper function for Telegram Notification
 def send_tg_alert(tenant, movie_id):
     tg = tenant.get('settings', {}).get('telegram', {})
@@ -394,7 +421,6 @@ ADMIN_HTML = """
                 <a href="/admin/options"><i class="fas fa-tags me-2"></i> ব্যাজ/ক্যাটাগরি এড</a>
                 <a href="/admin/settings"><i class="fas fa-cog me-2"></i> সেটিংস ও এডস</a>
                 
-                <!-- 🚀 NEW: TELEGRAM & RESET MENU -->
                 <a href="/admin/telegram"><i class="fab fa-telegram me-2"></i> টেলিগ্রাম বট</a>
                 <a href="/admin/reset_movies" onclick="return confirm('আপনি কি সব হিডেন/ডিলেট করা মুভি ফিরিয়ে আনতে চান?');"><i class="fas fa-sync-alt me-2"></i> মুভি রিসেট (Restore)</a>
 
@@ -458,9 +484,12 @@ ADMIN_HTML = """
 @app.route('/')
 def home():
     tenant = get_tenant()
-    host = tenant.get('host')
     
-    # Cache System for high traffic
+    # 🚀 GLOBAL LOCK CHECK
+    expired_html = check_domain_expiration(tenant)
+    if expired_html: return expired_html, 403
+
+    host = tenant.get('host')
     cached_html = get_cached_data('home_page', host)
     if cached_html:
         return cached_html
@@ -469,7 +498,6 @@ def home():
     limits = settings.get('limits', {})
     promos = settings.get('promos', [])
     
-    # 🚀 EXCLUDE HIDDEN MOVIES
     hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
     query_exclude = {"_id": {"$nin": hidden_ids}}
 
@@ -488,7 +516,6 @@ def home():
             if items:
                 sections[t] = items
     
-    # LATEST EPISODES EXTRACTION
     lim_e = int(limits.get('Episode', 12))
     latest_episodes = []
     recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama", "Anime"]}, "_id": {"$nin": hidden_ids}}).sort('_id', -1).limit(20))
@@ -716,6 +743,11 @@ def home():
 @app.route('/search')
 def search():
     tenant = get_tenant()
+    
+    # 🚀 GLOBAL LOCK CHECK
+    expired_html = check_domain_expiration(tenant)
+    if expired_html: return expired_html, 403
+
     hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
     query = request.args.get('q', '')
     movies = list(movies_col.find({"title": {"$regex": query, "$options": "i"}, "_id": {"$nin": hidden_ids}}).sort('_id', -1))
@@ -753,6 +785,10 @@ def category_filter(cat_name):
     tenant = get_tenant()
     host = tenant.get('host')
     
+    # 🚀 GLOBAL LOCK CHECK
+    expired_html = check_domain_expiration(tenant)
+    if expired_html: return expired_html, 403
+
     cache_key = f"cat_{cat_name}"
     cached_html = get_cached_data(cache_key, host)
     if cached_html: return cached_html
@@ -807,12 +843,12 @@ def movie_details(id):
     tenant = get_tenant()
     host = tenant.get('host')
     
+    # 🚀 GLOBAL LOCK CHECK
+    expired_html = check_domain_expiration(tenant)
+    if expired_html: return expired_html, 403
+    
     if str(id) in tenant.get('hidden_movies', []):
         return "<h2 style='text-align:center;color:red;margin-top:50px;'>This movie has been removed from this site.</h2>", 404
-
-    is_locked = not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time()
-    if is_locked:
-        return f"<h1 style='color:#ff4444; text-align:center; margin-top:50px; font-family:sans-serif;'>⚠️ ডোমেন ({host}) এর সাবস্ক্রিপশন মেয়াদ শেষ!</h1><h3 style='color:#fff; text-align:center; font-family:sans-serif;'>রেনিউ করতে দয়া করে মেইন এডমিনের সাথে যোগাযোগ করুন।</h3>", 403
 
     cache_key = f"movie_{id}"
     cached_html = get_cached_data(cache_key, host)
@@ -1022,6 +1058,9 @@ def logout():
 # ADMIN ROUTES (Backend)
 # ==========================================
 
+import datetime
+def format_time(ts): return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %I:%M:%S %p')
+
 @app.route('/admin')
 @login_required
 def admin_dashboard():
@@ -1032,8 +1071,17 @@ def admin_dashboard():
     total_series = movies_col.count_documents({"type": {"$in": ["Series", "Drama"]}, "_id": {"$nin": hidden_ids}})
     total_views = sum([m.get('views', 0) for m in movies_col.find({"_id": {"$nin": hidden_ids}})])
     
+    expire_date = format_time(tenant.get('expire_at', 0)) if not tenant.get('is_main') else "Never Expires"
+    
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">ড্যাশবোর্ড (Dashboard)</h2>
+    
+    {% if not is_main %}
+    <div class="alert alert-warning border-warning shadow-sm mb-4" style="background:#1e2738; color:#fff;">
+        <i class="fas fa-clock text-warning fs-5"></i> আপনার সাইটের মেয়াদ শেষ হবে: <strong class="text-warning fs-5 ms-2">{{ expire_date }}</strong>
+    </div>
+    {% endif %}
+
     <div class="row">
         <div class="col-md-4 mb-3">
             <div class="card p-4 text-center border-bottom border-primary border-4">
@@ -1055,7 +1103,7 @@ def admin_dashboard():
         </div>
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
-    return render_admin(html, tm=total_movies, ts=total_series, tv=total_views)
+    return render_admin(html, tm=total_movies, ts=total_series, tv=total_views, expire_date=expire_date)
 
 # VERCEL API FUNCTIONS
 def add_domain_to_vercel(domain):
@@ -1098,13 +1146,13 @@ def manage_domains():
             password = request.form.get('admin_pass').strip()
             price = request.form.get('price', 0)
             
-            # 🚀 NEW: Advanced Duration Calculation for Add
-            y = int(request.form.get('years', 0))
-            mo = int(request.form.get('months', 0))
-            d = int(request.form.get('days', 0))
-            h = int(request.form.get('hours', 0))
-            m = int(request.form.get('mins', 0))
-            s = int(request.form.get('secs', 0))
+            # 🚀 SAFE ADVANCED DURATION PARSING (Fixes 500 Internal Error)
+            y = int(request.form.get('years') or 0)
+            mo = int(request.form.get('months') or 0)
+            d = int(request.form.get('days') or 0)
+            h = int(request.form.get('hours') or 0)
+            m = int(request.form.get('mins') or 0)
+            s = int(request.form.get('secs') or 0)
             add_secs = (y * 31536000) + (mo * 2592000) + (d * 86400) + (h * 3600) + (m * 60) + s
             expire_at = time.time() + add_secs
             
@@ -1129,13 +1177,13 @@ def manage_domains():
             tenant_id = request.form.get('tenant_id')
             price = request.form.get('price', 0)
             
-            # 🚀 NEW: Advanced Duration Calculation for Renew
-            y = int(request.form.get('years', 0))
-            mo = int(request.form.get('months', 0))
-            d = int(request.form.get('days', 0))
-            h = int(request.form.get('hours', 0))
-            m = int(request.form.get('mins', 0))
-            s = int(request.form.get('secs', 0))
+            # 🚀 SAFE ADVANCED DURATION PARSING (Fixes 500 Internal Error)
+            y = int(request.form.get('years') or 0)
+            mo = int(request.form.get('months') or 0)
+            d = int(request.form.get('days') or 0)
+            h = int(request.form.get('hours') or 0)
+            m = int(request.form.get('mins') or 0)
+            s = int(request.form.get('secs') or 0)
             add_secs = (y * 31536000) + (mo * 2592000) + (d * 86400) + (h * 3600) + (m * 60) + s
             
             t = domains_col.find_one({"_id": ObjectId(tenant_id)})
@@ -1158,9 +1206,6 @@ def manage_domains():
     domains_list = list(domains_col.find({"is_main": False}).sort('_id', -1))
     current_time = time.time()
     
-    import datetime
-    def format_time(ts): return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">কাস্টম ডোমেন ও DNS ম্যানেজমেন্ট</h2>
     
@@ -1178,7 +1223,7 @@ def manage_domains():
             </table>
         </div>
         {% if dns_info.api_success %}
-        <div class="alert alert-success p-2 mt-2"><i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে না। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!</div>
+        <div class="alert alert-success p-2 mt-2"><i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে বোমা!</div>
         {% else %}
         <div class="alert alert-danger p-2 mt-2"><i class="fas fa-exclamation-triangle"></i> <b>API Failed:</b> {{ dns_info.api_status }}<br><i>(আপনাকে হয়তো ডোমেইনটি ম্যানুয়ালি Vercel Dashboard-এ গিয়ে Settings > Domains থেকে Add করতে হবে।)</i></div>
         {% endif %}
@@ -1198,12 +1243,12 @@ def manage_domains():
             <!-- 🚀 ADVANCED DURATION -->
             <label class="text-info fw-bold mb-2">Select Subscription Duration:</label>
             <div class="row g-2 mb-3 bg-dark p-2 rounded border border-secondary">
-                <div class="col"><input type="number" name="years" class="form-control form-control-sm" placeholder="Years" value="0"></div>
-                <div class="col"><input type="number" name="months" class="form-control form-control-sm" placeholder="Months" value="1"></div>
-                <div class="col"><input type="number" name="days" class="form-control form-control-sm" placeholder="Days" value="0"></div>
-                <div class="col"><input type="number" name="hours" class="form-control form-control-sm" placeholder="Hours" value="0"></div>
-                <div class="col"><input type="number" name="mins" class="form-control form-control-sm" placeholder="Mins" value="0"></div>
-                <div class="col"><input type="number" name="secs" class="form-control form-control-sm" placeholder="Secs" value="0"></div>
+                <div class="col"><input type="number" name="years" class="form-control form-control-sm border-warning" placeholder="Years" value="0"></div>
+                <div class="col"><input type="number" name="months" class="form-control form-control-sm border-warning" placeholder="Months" value="1"></div>
+                <div class="col"><input type="number" name="days" class="form-control form-control-sm border-warning" placeholder="Days" value="0"></div>
+                <div class="col"><input type="number" name="hours" class="form-control form-control-sm border-warning" placeholder="Hours" value="0"></div>
+                <div class="col"><input type="number" name="mins" class="form-control form-control-sm border-warning" placeholder="Mins" value="0"></div>
+                <div class="col"><input type="number" name="secs" class="form-control form-control-sm border-warning" placeholder="Secs" value="0"></div>
             </div>
             <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Add Domain</button>
         </form>
@@ -1228,12 +1273,12 @@ def manage_domains():
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
                                 
                                 <div class="d-flex flex-wrap gap-1 mb-2">
-                                    <input type="number" name="years" class="form-control form-control-sm" style="width:60px;" placeholder="Yr" value="0">
-                                    <input type="number" name="months" class="form-control form-control-sm" style="width:60px;" placeholder="Mo" value="1">
-                                    <input type="number" name="days" class="form-control form-control-sm" style="width:60px;" placeholder="Dy" value="0">
-                                    <input type="number" name="hours" class="form-control form-control-sm" style="width:60px;" placeholder="Hr" value="0">
-                                    <input type="number" name="mins" class="form-control form-control-sm" style="width:60px;" placeholder="Mn" value="0">
-                                    <input type="number" name="secs" class="form-control form-control-sm" style="width:60px;" placeholder="Sc" value="0">
+                                    <input type="number" name="years" class="form-control form-control-sm" style="width:60px;" placeholder="Yr" value="0" title="Years">
+                                    <input type="number" name="months" class="form-control form-control-sm" style="width:60px;" placeholder="Mo" value="1" title="Months">
+                                    <input type="number" name="days" class="form-control form-control-sm" style="width:60px;" placeholder="Dy" value="0" title="Days">
+                                    <input type="number" name="hours" class="form-control form-control-sm" style="width:60px;" placeholder="Hr" value="0" title="Hours">
+                                    <input type="number" name="mins" class="form-control form-control-sm" style="width:60px;" placeholder="Mn" value="0" title="Minutes">
+                                    <input type="number" name="secs" class="form-control form-control-sm" style="width:60px;" placeholder="Sc" value="0" title="Seconds">
                                 </div>
                                 <div class="d-flex justify-content-between">
                                     <input type="number" name="price" class="form-control form-control-sm d-inline" style="width:80px;" value="0" placeholder="Price">
@@ -1738,7 +1783,6 @@ def add_movie():
                 inserted_id = movies_col.insert_one(new_doc).inserted_id
                 flash(f"TMDB থেকে '{title}' ইমপোর্ট হয়েছে! এখন লিংক বসান।")
                 
-                # 🚀 TG Auto Post
                 if tenant.get('settings', {}).get('telegram', {}).get('auto_post'):
                     send_tg_alert(tenant, str(inserted_id))
                     
@@ -1770,7 +1814,6 @@ def add_movie():
             inserted_id = movies_col.insert_one(new_doc).inserted_id
             flash("ম্যানুয়ালি ডাটা যোগ করা হয়েছে!")
             
-            # 🚀 TG Auto Post
             if tenant.get('settings', {}).get('telegram', {}).get('auto_post'):
                 send_tg_alert(tenant, str(inserted_id))
                 
@@ -2114,7 +2157,6 @@ def all_movies():
     tenant = get_tenant()
     hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
     
-    # 🚀 Hide movies that this sub-domain admin has deleted
     movies = list(movies_col.find({"_id": {"$nin": hidden_ids}}).sort('_id', -1))
     
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
@@ -2185,7 +2227,6 @@ def delete_movie(id):
     if tenant.get('is_main'):
         movies_col.delete_one({"_id": ObjectId(id)})
     else:
-        # 🚀 Soft Delete for Sub Admins
         domains_col.update_one({"_id": tenant['_id']}, {"$addToSet": {"hidden_movies": str(id)}})
     flash("মুভিটি সফলভাবে ডিলেট করা হয়েছে!")
     return redirect(url_for('all_movies'))
@@ -2200,7 +2241,6 @@ def delete_multiple():
         ids = [ObjectId(i) for i in data.get('ids', [])]
         movies_col.delete_many({"_id": {"$in": ids}})
     else:
-        # 🚀 Soft Delete for Sub Admins
         domains_col.update_one({"_id": tenant['_id']}, {"$addToSet": {"hidden_movies": {"$each": data.get('ids', [])}}})
     return jsonify({"status": "success"})
 
