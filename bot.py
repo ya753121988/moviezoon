@@ -341,7 +341,7 @@ ADMIN_HTML = """
                 
                 <!-- 🚀 NEW FEATURE: ONLY MAIN ADMIN SEES DOMAINS MENU -->
                 {% if is_main %}
-                <a href="/admin/domains" style="color: #ffc107;"><i class="fas fa-globe me-2"></i> 🌐 সাব-ডোমেন এড</a>
+                <a href="/admin/domains" style="color: #ffc107;"><i class="fas fa-globe me-2"></i> 🌐 কাস্টম ডোমেন এড</a>
                 {% endif %}
                 
                 <a href="/admin/add_movie"><i class="fas fa-plus-circle me-2"></i> মুভি/সিরিজ এড</a>
@@ -357,7 +357,7 @@ ADMIN_HTML = """
                 <select class="form-select w-50" onchange="location = this.value;">
                     <option value="/admin">ড্যাশবোর্ড</option>
                     {% if is_main %}
-                    <option value="/admin/domains">🌐 সাব-ডোমেন এড</option>
+                    <option value="/admin/domains">🌐 কাস্টম ডোমেন এড</option>
                     {% endif %}
                     <option value="/admin/add_movie">মুভি এড</option>
                     <option value="/admin/all_movies">অল মুভি</option>
@@ -1023,7 +1023,7 @@ def add_domain_to_vercel(domain):
     try:
         res = requests.post(url, headers=headers, json={"name": domain})
         if res.status_code in [200, 201]: 
-            return True, "API Success: ভার্সেলে সাব-ডোমেইন অটোমেটিক এড হয়েছে!"
+            return True, "API Success: ভার্সেলে ডোমেইন অটোমেটিক এড হয়েছে!"
         else: 
             return False, f"API Error: {res.json().get('error', {}).get('message', 'Unknown Error')}"
     except Exception as e:
@@ -1042,7 +1042,7 @@ def remove_domain_from_vercel(domain):
         pass
 
 
-# 🚀 NEW FEATURE: UNLIMITED VERCEL SUBDOMAINS MANAGEMENT
+# 🚀 NEW FEATURE: UNLIMITED CUSTOM DOMAINS MANAGEMENT (.com / .xyz) & DNS GENERATOR
 @app.route('/admin/domains', methods=['GET', 'POST'])
 @login_required
 def manage_domains():
@@ -1050,18 +1050,14 @@ def manage_domains():
     if not tenant.get('is_main'):
         return "<h2 style='color:red;'>Access Denied. Only Main Admin can manage Domains.</h2>", 403
         
-    dns_info = None 
+    dns_info = None # নতুন ডোমেন এড করলে DNS ইনফো দেখানোর জন্য
         
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
-            subdomain = request.form.get('subdomain').strip().lower()
-            
-            # Remove any accidently typed invalid characters
-            subdomain = subdomain.replace("http://", "").replace("https://", "").replace("www.", "").replace(".vercel.app", "").strip('/')
-            
-            # 🚀 Auto format with .vercel.app to completely hide the main domain
-            host = f"{subdomain}.vercel.app"
+            host = request.form.get('host').strip().lower()
+            # Remove http:// or www. if typed accidentally
+            host = host.replace("http://", "").replace("https://", "").replace("www.", "").strip('/')
             
             user = request.form.get('admin_user').strip()
             password = request.form.get('admin_pass').strip()
@@ -1085,13 +1081,15 @@ def manage_domains():
                 # 🚀 Vercel API Call - Auto Add Domain
                 api_success, api_msg = add_domain_to_vercel(host)
                 
+                # ডোমেন এড হওয়ার পর DNS রেকর্ড জেনারেট করা হচ্ছে (For Vercel)
                 dns_info = {
                     "domain": host,
-                    "is_vercel_subdomain": True,
+                    "a_record": "76.76.21.21", 
+                    "cname": "cname.vercel-dns.com",
                     "api_status": api_msg,
                     "api_success": api_success
                 }
-                flash(f"সাব ডোমেন {host} সফলভাবে ডাটাবেসে যুক্ত হয়েছে!")
+                flash(f"ডোমেন {host} সফলভাবে ডাটাবেসে যুক্ত হয়েছে!")
                 
         elif action == 'renew':
             tenant_id = request.form.get('tenant_id')
@@ -1126,63 +1124,68 @@ def manage_domains():
         return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
 
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
-    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">সাব-ডোমেন ম্যানেজমেন্ট (Vercel)</h2>
+    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">কাস্টম ডোমেন ও DNS ম্যানেজমেন্ট</h2>
     
     {% if dns_info %}
-    <!-- 🚀 ডোমেন এড করার পর স্ট্যাটাস শো করবে -->
+    <!-- 🚀 ডোমেন এড করার পর DNS রেকর্ড শো করবে -->
     <div class="card p-4 mb-4 border-warning shadow" style="background:#1e2738;">
-        <h4 class="text-warning fw-bold mb-3"><i class="fas fa-server"></i> ডোমেন কানেকশন স্ট্যাটাস</h4>
-        <p class="text-white"><b>{{ dns_info.domain }}</b> সাইটটি তৈরি করা হয়েছে!</p>
+        <h4 class="text-warning fw-bold mb-3"><i class="fas fa-server"></i> ডোমেন কানেক্ট করার নিয়ম</h4>
+        <p class="text-white"><b>{{ dns_info.domain }}</b> সাইটটি লাইভ করার জন্য ক্লায়েন্টকে তার ডোমেন প্যানেলে (Cloudflare/Namecheap) গিয়ে নিচের রেকর্ড দুটি বসাতে বলুন:</p>
         
-        {% if dns_info.is_vercel_subdomain %}
-        <div class="alert alert-info p-3 mb-3 border-info">
-            <i class="fas fa-info-circle fs-5 d-block mb-2"></i> 
-            যেহেতু এটি একটি <b>.vercel.app</b> সাব-ডোমেন, তাই কোনো <b>DNS (A Record বা CNAME)</b> বসানোর ঝামেলা নেই! ক্লায়েন্টকে শুধু <b>{{ dns_info.domain }}</b> লিংকটি দিয়ে দিন।
+        <div class="table-responsive">
+            <table class="table table-bordered table-dark text-center align-middle">
+                <thead><tr class="text-info"><th>Type</th><th>Name / Host</th><th>Value / Target</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><span class="badge bg-primary fs-6">A Record</span></td>
+                        <td class="fw-bold">@</td>
+                        <td class="text-success fw-bold fs-5">{{ dns_info.a_record }}</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge bg-info fs-6">CNAME</span></td>
+                        <td class="fw-bold">www</td>
+                        <td class="text-warning fw-bold fs-5">{{ dns_info.cname }}</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
-        {% endif %}
         
         <!-- API STATUS ALERT -->
         {% if dns_info.api_success %}
         <div class="alert alert-success p-2 mt-2">
-            <i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} এটি এখন সম্পূর্ণ লাইভ!
+            <i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে না। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!
         </div>
         {% else %}
         <div class="alert alert-danger p-2 mt-2">
             <i class="fas fa-exclamation-triangle"></i> <b>API Failed:</b> {{ dns_info.api_status }}<br>
-            <i>(নামটি হয়তো অন্য কেউ নিয়ে নিয়েছে অথবা আপনাকে Vercel Settings থেকে ম্যানুয়ালি এড করতে হবে।)</i>
+            <i>(আপনাকে হয়তো ডোমেইনটি ম্যানুয়ালি Vercel Dashboard-এ গিয়ে Settings > Domains থেকে Add করতে হবে।)</i>
         </div>
         {% endif %}
     </div>
     {% endif %}
 
     <div class="card p-4 mb-4 shadow border-success" style="background:#151b2b;">
-        <h4 class="text-success fw-bold mb-3"><i class="fas fa-plus"></i> নতুন সাব-ডোমেন তৈরি করুন</h4>
+        <h4 class="text-success fw-bold mb-3"><i class="fas fa-plus"></i> নতুন ডোমেন এড করুন</h4>
         <form method="POST">
             <input type="hidden" name="action" value="add">
             <div class="row">
-                <div class="col-md-3 mb-3">
-                    <label>Subdomain Prefix (নাম লিখুন)</label>
-                    <div class="input-group">
-                        <input type="text" name="subdomain" class="form-control border-success" placeholder="ex: mymovies123" required>
-                        <span class="input-group-text bg-dark text-white border-success">.vercel.app</span>
-                    </div>
-                </div>
+                <div class="col-md-3 mb-3"><label>Custom Domain (Ex: movies.com)</label><input type="text" name="host" class="form-control border-success" placeholder="example.com" required></div>
                 <div class="col-md-3 mb-3"><label>Client Username</label><input type="text" name="admin_user" class="form-control" required></div>
                 <div class="col-md-2 mb-3"><label>Client Password</label><input type="text" name="admin_pass" class="form-control" required></div>
                 <div class="col-md-2 mb-3"><label>Price Paid (৳)</label><input type="number" name="price" class="form-control" value="0"></div>
                 <div class="col-md-2 mb-3"><label>Duration (Months)</label><input type="number" name="months" class="form-control" value="1" min="1"></div>
             </div>
-            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Create Vercel Subdomain & Auto Add</button>
+            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Auto Add to Vercel</button>
         </form>
     </div>
 
     <div class="card p-4 shadow" style="background:#151b2b;">
-        <h4 class="text-info fw-bold mb-3"><i class="fas fa-list"></i> অল সাব-ডোমেন লিস্ট</h4>
+        <h4 class="text-info fw-bold mb-3"><i class="fas fa-list"></i> অল ডোমেন লিস্ট</h4>
         <div class="table-responsive">
             <table class="table table-dark table-hover align-middle border-secondary">
                 <thead>
                     <tr class="text-warning">
-                        <th>Subdomain / URL</th>
+                        <th>Domain / URL</th>
                         <th>User / Pass</th>
                         <th>Total Paid</th>
                         <th>Expire Date</th>
@@ -1193,7 +1196,7 @@ def manage_domains():
                 <tbody>
                     {% for sub in domains_list %}
                     <tr>
-                        <td class="fw-bold text-white"><a href="https://{{ sub.host }}" target="_blank" class="text-white text-decoration-none">{{ sub.host }} <i class="fas fa-external-link-alt ms-1" style="font-size:10px;"></i></a></td>
+                        <td class="fw-bold text-white">{{ sub.host }}</td>
                         <td>{{ sub.admin_user }} / {{ sub.admin_pass }}</td>
                         <td class="text-success">{{ sub.price_paid }} ৳</td>
                         <td>{{ format_time(sub.expire_at) }}</td>
@@ -1500,6 +1503,12 @@ def admin_options():
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_admin(html, badges=badges, qualities=qualities, langs=langs, cats=cats, link_names=link_names)
+
+@app.route('/admin/del_opt/<id>')
+@login_required
+def del_opt(id):
+    options_col.delete_one({"_id": ObjectId(id)})
+    return redirect(url_for('admin_options'))
 
 @app.route('/admin/tmdb_search')
 @login_required
