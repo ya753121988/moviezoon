@@ -511,12 +511,12 @@ def home():
     sections = {}
     for t in all_types:
         if t != "Episode":
-            lim = int(limits.get(t, 12))
+            lim = int(limits.get(t) or 12)
             items = list(movies_col.find({"type": t, "_id": {"$nin": hidden_ids}}).sort('_id', -1).limit(lim))
             if items:
                 sections[t] = items
     
-    lim_e = int(limits.get('Episode', 12))
+    lim_e = int(limits.get('Episode') or 12)
     latest_episodes = []
     recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama", "Anime"]}, "_id": {"$nin": hidden_ids}}).sort('_id', -1).limit(20))
     for s_obj in recent_series_dramas:
@@ -1139,20 +1139,25 @@ def manage_domains():
         
     if request.method == 'POST':
         action = request.form.get('action')
+        
+        def safe_int(key):
+            try: return int(request.form.get(key) or 0)
+            except: return 0
+
         if action == 'add':
             host = request.form.get('host').strip().lower()
             host = host.replace("http://", "").replace("https://", "").replace("www.", "").strip('/')
             user = request.form.get('admin_user').strip()
             password = request.form.get('admin_pass').strip()
-            price = request.form.get('price', 0)
             
-            # 🚀 SAFE ADVANCED DURATION PARSING (Fixes 500 Internal Error)
-            y = int(request.form.get('years') or 0)
-            mo = int(request.form.get('months') or 0)
-            d = int(request.form.get('days') or 0)
-            h = int(request.form.get('hours') or 0)
-            m = int(request.form.get('mins') or 0)
-            s = int(request.form.get('secs') or 0)
+            price = safe_int('price')
+            y = safe_int('years')
+            mo = safe_int('months')
+            d = safe_int('days')
+            h = safe_int('hours')
+            m = safe_int('mins')
+            s = safe_int('secs')
+            
             add_secs = (y * 31536000) + (mo * 2592000) + (d * 86400) + (h * 3600) + (m * 60) + s
             expire_at = time.time() + add_secs
             
@@ -1175,15 +1180,15 @@ def manage_domains():
                 
         elif action == 'renew':
             tenant_id = request.form.get('tenant_id')
-            price = request.form.get('price', 0)
             
-            # 🚀 SAFE ADVANCED DURATION PARSING (Fixes 500 Internal Error)
-            y = int(request.form.get('years') or 0)
-            mo = int(request.form.get('months') or 0)
-            d = int(request.form.get('days') or 0)
-            h = int(request.form.get('hours') or 0)
-            m = int(request.form.get('mins') or 0)
-            s = int(request.form.get('secs') or 0)
+            price = safe_int('price')
+            y = safe_int('years')
+            mo = safe_int('months')
+            d = safe_int('days')
+            h = safe_int('hours')
+            m = safe_int('mins')
+            s = safe_int('secs')
+            
             add_secs = (y * 31536000) + (mo * 2592000) + (d * 86400) + (h * 3600) + (m * 60) + s
             
             t = domains_col.find_one({"_id": ObjectId(tenant_id)})
@@ -1223,7 +1228,7 @@ def manage_domains():
             </table>
         </div>
         {% if dns_info.api_success %}
-        <div class="alert alert-success p-2 mt-2"><i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে বোমা!</div>
+        <div class="alert alert-success p-2 mt-2"><i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে না। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!</div>
         {% else %}
         <div class="alert alert-danger p-2 mt-2"><i class="fas fa-exclamation-triangle"></i> <b>API Failed:</b> {{ dns_info.api_status }}<br><i>(আপনাকে হয়তো ডোমেইনটি ম্যানুয়ালি Vercel Dashboard-এ গিয়ে Settings > Domains থেকে Add করতে হবে।)</i></div>
         {% endif %}
@@ -1244,7 +1249,7 @@ def manage_domains():
             <label class="text-info fw-bold mb-2">Select Subscription Duration:</label>
             <div class="row g-2 mb-3 bg-dark p-2 rounded border border-secondary">
                 <div class="col"><input type="number" name="years" class="form-control form-control-sm border-warning" placeholder="Years" value="0"></div>
-                <div class="col"><input type="number" name="months" class="form-control form-control-sm border-warning" placeholder="Months" value="1"></div>
+                <div class="col"><input type="number" name="months" class="form-control form-control-sm border-warning" placeholder="Months" value="0"></div>
                 <div class="col"><input type="number" name="days" class="form-control form-control-sm border-warning" placeholder="Days" value="0"></div>
                 <div class="col"><input type="number" name="hours" class="form-control form-control-sm border-warning" placeholder="Hours" value="0"></div>
                 <div class="col"><input type="number" name="mins" class="form-control form-control-sm border-warning" placeholder="Mins" value="0"></div>
@@ -1274,7 +1279,7 @@ def manage_domains():
                                 
                                 <div class="d-flex flex-wrap gap-1 mb-2">
                                     <input type="number" name="years" class="form-control form-control-sm" style="width:60px;" placeholder="Yr" value="0" title="Years">
-                                    <input type="number" name="months" class="form-control form-control-sm" style="width:60px;" placeholder="Mo" value="1" title="Months">
+                                    <input type="number" name="months" class="form-control form-control-sm" style="width:60px;" placeholder="Mo" value="0" title="Months">
                                     <input type="number" name="days" class="form-control form-control-sm" style="width:60px;" placeholder="Dy" value="0" title="Days">
                                     <input type="number" name="hours" class="form-control form-control-sm" style="width:60px;" placeholder="Hr" value="0" title="Hours">
                                     <input type="number" name="mins" class="form-control form-control-sm" style="width:60px;" placeholder="Mn" value="0" title="Minutes">
@@ -1389,9 +1394,15 @@ def admin_settings():
         p_urls = request.form.getlist('promo_url[]')
         promos = [{"text": t, "image": i, "url": u} for t, i, u in zip(p_texts, p_images, p_urls) if t and u]
         
-        limits = {"Episode": request.form.get('limit_Episode', '12')}
+        def safe_int_form(key, default="12"):
+            val = request.form.get(key)
+            if not val: return default
+            try: return str(int(val))
+            except: return default
+
+        limits = {"Episode": safe_int_form('limit_Episode', '12')}
         for t in all_types:
-            limits[t] = request.form.get(f"limit_{t}", "12")
+            limits[t] = safe_int_form(f"limit_{t}", "12")
         
         new_settings = {
             "site_name": request.form.get('site_name', 'DooPlay Pro'),
