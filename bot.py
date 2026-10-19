@@ -53,7 +53,7 @@ if domains_col.count_documents({}) == 0:
         "admin_pass": admin_pass,
         "expire_at": 20000000000, # Never expires
         "price_paid": 0,
-        "hidden_movies": [], # 🚀 NEW: Hidden/Deleted Movies for specific tenant
+        "hidden_movies": [], 
         "settings": old_settings if old_settings else {
             "site_name": "DooPlay Pro",
             "site_logo": "",
@@ -70,7 +70,7 @@ def get_tenant():
     if t: return t
     return domains_col.find_one({"is_main": True})
 
-# 🚀 NEW: GLOBAL EXPIRATION LOCK SCREEN HELPER
+# 🚀 NEW: GLOBAL EXPIRATION LOCK SCREEN HELPER (HARD LOCK)
 def check_domain_expiration(tenant):
     if not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time():
         host = tenant.get('host', 'Domain')
@@ -128,7 +128,7 @@ def send_tg_alert(tenant, movie_id):
     except: pass
 
 # ==========================================
-# High Traffic In-Memory Cache System (Isolated for Domains)
+# High Traffic In-Memory Cache System
 # ==========================================
 CACHE_STORE = {}
 CACHE_TIMEOUT = 120 
@@ -148,7 +148,7 @@ def clear_cache():
     CACHE_STORE = {}
 
 # ==========================================
-# Admin Authentication Decorator (Separated by Domain)
+# Admin Authentication Decorator
 # ==========================================
 def login_required(f):
     @wraps(f)
@@ -163,7 +163,12 @@ def render_frontend(html, page_name, **kwargs):
     tenant = get_tenant()
     is_locked = not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time()
     settings = tenant.get('settings', {})
-    return render_template_string(html, is_locked=str(is_locked), settings=settings, page_name=page_name, db=db, **kwargs)
+    
+    # 🚀 Passing variables for Live Countdown Timer
+    return render_template_string(html, is_locked=str(is_locked), settings=settings, page_name=page_name, db=db, 
+                                  expire_at=tenant.get('expire_at', 0), 
+                                  is_main_domain=tenant.get('is_main', True), 
+                                  **kwargs)
 
 def render_admin(html, **kwargs):
     tenant = get_tenant()
@@ -318,9 +323,49 @@ FRONTEND_HTML = """
         {% endif %}
     </div>
 
+    <!-- 🚀 NEW FEATURE: LIVE COUNTDOWN TIMER FOR SUBDOMAINS -->
+    {% if not is_main_domain and expire_at %}
+    <div id="subdomain-live-timer" style="position: fixed; bottom: 15px; left: 15px; background: rgba(11,15,25,0.9); color: #ffc107; padding: 10px 15px; border-radius: 8px; font-size: 13px; z-index: 9999; border: 1px solid #ffc107; box-shadow: 0 4px 10px rgba(0,0,0,0.8); font-weight: bold; display: none;">
+        <i class="fas fa-hourglass-half text-warning"></i> Expires In: <br><span id="timer-text" class="text-white fs-6"></span>
+    </div>
+    <script>
+        var expTime = {{ expire_at }} * 1000;
+        var tBox = document.getElementById('subdomain-live-timer');
+        var tText = document.getElementById('timer-text');
+        
+        function updateT() {
+            var now = new Date().getTime();
+            var dist = expTime - now;
+            
+            if (dist <= 0) {
+                tText.innerHTML = "<span class='text-danger'>EXPIRED! Locking...</span>";
+                tBox.style.display = "block";
+                setTimeout(function(){ location.reload(); }, 1500); // Trigger Lock Screen
+                return;
+            }
+            
+            tBox.style.display = "block";
+            var d = Math.floor(dist / (1000 * 60 * 60 * 24));
+            var h = Math.floor((dist % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            var m = Math.floor((dist % (1000 * 60 * 60)) / (1000 * 60));
+            var s = Math.floor((dist % (1000 * 60)) / 1000);
+            
+            var text = "";
+            if(d > 0) text += d + "d ";
+            if(h > 0 || d > 0) text += h + "h ";
+            if(m > 0 || h > 0 || d > 0) text += m + "m ";
+            text += s + "s";
+            
+            tText.innerHTML = text;
+        }
+        updateT();
+        setInterval(updateT, 1000);
+    </script>
+    {% endif %}
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- 🚀 EXPIRE LOCK SYSTEM & 0-SECOND DIRECT REDIRECT -->
+    <!-- EXPIRE LOCK & DIRECT REDIRECT -->
     <script>
         const isLocked = "{{ is_locked }}"; 
         const adStatusDirect = "{{ settings.get('ad_status_direct', 'off') }}";
@@ -1140,8 +1185,10 @@ def manage_domains():
     if request.method == 'POST':
         action = request.form.get('action')
         
+        # 🚀 NEW: SAFE PARSER TO PREVENT 500 ERRORS IF FIELDS ARE EMPTY
         def safe_int(key):
-            try: return int(request.form.get(key) or 0)
+            val = request.form.get(key)
+            try: return int(val) if val else 0
             except: return 0
 
         if action == 'add':
@@ -1169,7 +1216,7 @@ def manage_domains():
                     "is_main": False,
                     "admin_user": user,
                     "admin_pass": password,
-                    "price_paid": int(price),
+                    "price_paid": price,
                     "expire_at": expire_at,
                     "hidden_movies": [],
                     "settings": tenant.get('settings', {}) 
@@ -1196,7 +1243,8 @@ def manage_domains():
                 current_expire = t.get('expire_at', time.time())
                 if current_expire < time.time(): current_expire = time.time()
                 new_expire = current_expire + add_secs
-                domains_col.update_one({"_id": ObjectId(tenant_id)}, {"$set": {"expire_at": new_expire}, "$inc": {"price_paid": int(price)}})
+                domains_col.update_one({"_id": ObjectId(tenant_id)}, {"$set": {"expire_at": new_expire}, "$inc": {"price_paid": price}})
+                clear_cache() # 🚀 CLEAR CACHE SO LOCK SCREEN APPLIES INSTANTLY
                 flash("ডোমেনটির মেয়াদ সফলভাবে বাড়ানো হয়েছে!")
                 return redirect(url_for('manage_domains'))
                 
@@ -1205,6 +1253,7 @@ def manage_domains():
             t = domains_col.find_one({"_id": ObjectId(tenant_id)})
             if t: remove_domain_from_vercel(t['host'])
             domains_col.delete_one({"_id": ObjectId(tenant_id)})
+            clear_cache()
             flash("ডোমেনটি সফলভাবে মুছে ফেলা হয়েছে!")
             return redirect(url_for('manage_domains'))
             
@@ -1245,8 +1294,7 @@ def manage_domains():
                 <div class="col-md-2 mb-3"><label>Client Password</label><input type="text" name="admin_pass" class="form-control" required></div>
                 <div class="col-md-2 mb-3"><label>Price Paid (৳)</label><input type="number" name="price" class="form-control" value="0"></div>
             </div>
-            <!-- 🚀 ADVANCED DURATION -->
-            <label class="text-info fw-bold mb-2">Select Subscription Duration:</label>
+            <label class="text-info fw-bold mb-2">Set Initial Duration:</label>
             <div class="row g-2 mb-3 bg-dark p-2 rounded border border-secondary">
                 <div class="col"><input type="number" name="years" class="form-control form-control-sm border-warning" placeholder="Years" value="0"></div>
                 <div class="col"><input type="number" name="months" class="form-control form-control-sm border-warning" placeholder="Months" value="0"></div>
@@ -1263,20 +1311,21 @@ def manage_domains():
         <h4 class="text-info fw-bold mb-3"><i class="fas fa-list"></i> অল ডোমেন লিস্ট</h4>
         <div class="table-responsive">
             <table class="table table-dark table-hover align-middle border-secondary">
-                <thead><tr class="text-warning"><th>Domain / URL</th><th>User / Pass</th><th>Total Paid</th><th>Expire Date</th><th>Status</th><th>Action (Renew/Delete)</th></tr></thead>
+                <thead><tr class="text-warning"><th>Domain / URL</th><th>User / Pass</th><th>Total Paid</th><th>Expire Date</th><th>Status</th><th>Action (Add More Time)</th></tr></thead>
                 <tbody>
                     {% for sub in domains_list %}
                     <tr>
                         <td class="fw-bold text-white">{{ sub.host }}</td>
                         <td>{{ sub.admin_user }} / {{ sub.admin_pass }}</td>
                         <td class="text-success">{{ sub.price_paid }} ৳</td>
-                        <td>{{ format_time(sub.expire_at) }}</td>
+                        <td class="text-info fw-bold">{{ format_time(sub.expire_at) }}</td>
                         <td>{% if sub.expire_at < current_time %}<span class="badge bg-danger fs-6">Locked</span>{% else %}<span class="badge bg-success fs-6">Active</span>{% endif %}</td>
                         <td>
                             <form method="POST" class="border p-2 rounded border-secondary" style="background: rgba(255,255,255,0.05);">
                                 <input type="hidden" name="action" value="renew">
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
                                 
+                                <label class="text-white small mb-1">Add Time (Yr-Mo-Dy-Hr-Mn-Sc):</label>
                                 <div class="d-flex flex-wrap gap-1 mb-2">
                                     <input type="number" name="years" class="form-control form-control-sm" style="width:60px;" placeholder="Yr" value="0" title="Years">
                                     <input type="number" name="months" class="form-control form-control-sm" style="width:60px;" placeholder="Mo" value="0" title="Months">
@@ -1287,7 +1336,7 @@ def manage_domains():
                                 </div>
                                 <div class="d-flex justify-content-between">
                                     <input type="number" name="price" class="form-control form-control-sm d-inline" style="width:80px;" value="0" placeholder="Price">
-                                    <button type="submit" class="btn btn-sm btn-primary fw-bold">Renew</button>
+                                    <button type="submit" class="btn btn-sm btn-primary fw-bold">Renew / Add Time</button>
                                 </div>
                             </form>
                             <form method="POST" class="mt-2 text-end" onsubmit="return confirm('ডোমেনটি কি ডিলেট করতে চান? এটি Vercel থেকেও ডিলেট হয়ে যাবে!');">
