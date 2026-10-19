@@ -22,7 +22,7 @@ db = client['movie_website']
 movies_col = db['movies']
 options_col = db['options']
 
-# 🚀 NEW FEATURE: CUSTOM DOMAIN (TENANT) DATABASE
+# 🚀 CUSTOM DOMAIN (TENANT) DATABASE
 domains_col = db['domains'] 
 
 # 100M+ Traffic Handling: Creating Indexes for Zero-Second DB Query
@@ -53,6 +53,7 @@ if domains_col.count_documents({}) == 0:
         "admin_pass": admin_pass,
         "expire_at": 20000000000, # Never expires
         "price_paid": 0,
+        "hidden_movies": [], # 🚀 NEW: Hidden/Deleted Movies for specific tenant
         "settings": old_settings if old_settings else {
             "site_name": "DooPlay Pro",
             "site_logo": "",
@@ -68,6 +69,36 @@ def get_tenant():
     t = domains_col.find_one({"host": host})
     if t: return t
     return domains_col.find_one({"is_main": True})
+
+# Helper function for Telegram Notification
+def send_tg_alert(tenant, movie_id):
+    tg = tenant.get('settings', {}).get('telegram', {})
+    if not tg.get('bot_token') or not tg.get('channel_id'): return
+    
+    movie = movies_col.find_one({"_id": ObjectId(movie_id)})
+    if not movie: return
+    
+    caption = f"🎬 *{movie['title']}*\n\n"
+    if movie.get('date'): caption += f"📅 Year: {movie['date'][:4]}\n"
+    if movie.get('language'): caption += f"🌍 Language: {movie['language']}\n"
+    if movie.get('quality'): caption += f"📺 Quality: {movie['quality']}\n"
+    if movie.get('type'): caption += f"🏷️ Type: {movie['type']}\n"
+    
+    site_url = tg.get('site_url', f"https://{tenant['host']}").rstrip('/')
+    caption += f"\n🔗 *Watch/Download Links:*\n👉 {site_url}/movie/{movie_id}\n"
+    
+    if tg.get('tutorial_link'):
+        caption += f"\n💡 *How to Download:*\n👉 [Watch Tutorial Video]({tg['tutorial_link']})"
+        
+    url = f"https://api.telegram.org/bot{tg['bot_token']}/sendPhoto"
+    payload = {
+        "chat_id": tg['channel_id'],
+        "photo": movie.get('poster', ''),
+        "caption": caption,
+        "parse_mode": "Markdown"
+    }
+    try: requests.post(url, json=payload, timeout=5)
+    except: pass
 
 # ==========================================
 # High Traffic In-Memory Cache System (Isolated for Domains)
@@ -103,7 +134,6 @@ def login_required(f):
 
 def render_frontend(html, page_name, **kwargs):
     tenant = get_tenant()
-    # 🚀 EXPIRE LOCK CHECK: If domain is expired, lock the site details
     is_locked = not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time()
     settings = tenant.get('settings', {})
     return render_template_string(html, is_locked=str(is_locked), settings=settings, page_name=page_name, db=db, **kwargs)
@@ -263,9 +293,9 @@ FRONTEND_HTML = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <!-- 🚀 NEW FEATURE: 0-SECOND DIRECT REDIRECT & EXPIRE LOCK SYSTEM -->
+    <!-- 🚀 EXPIRE LOCK SYSTEM & 0-SECOND DIRECT REDIRECT -->
     <script>
-        const isLocked = "{{ is_locked }}"; // Checks if Custom Domain is Expired
+        const isLocked = "{{ is_locked }}"; 
         const adStatusDirect = "{{ settings.get('ad_status_direct', 'off') }}";
         const rawLinks = '{{ settings.get("direct_links", []) | tojson | safe }}';
         let directLinks = [];
@@ -274,27 +304,21 @@ FRONTEND_HTML = """
         let adClickIndex = parseInt(localStorage.getItem('dooplay_ad_index')) || 0;
 
         function handleMovieClick(event, url) {
-            // Check if Domain Expired
             if(isLocked === 'True') {
                 event.preventDefault();
                 alert('⚠️ এই ডোমেনটির সাবস্ক্রিপশন মেয়াদ শেষ হয়ে গেছে! দয়া করে মেইন এডমিনের সাথে যোগাযোগ করুন।');
                 return;
             }
-            
-            // 0-Second Redirect System (NO LOADER)
             if(adStatusDirect === 'on' && directLinks.length > 0) {
                 event.preventDefault(); 
                 let clickUrl = directLinks[adClickIndex % directLinks.length];
                 adClickIndex++;
                 localStorage.setItem('dooplay_ad_index', adClickIndex);
                 window.open(clickUrl, '_blank'); 
-                window.location.href = url; // Instant redirect
-            } else {
-                // Let native browser click happen instantly (0 Second Delay)
+                window.location.href = url; 
             }
         }
 
-        // Check Ad for download/watch link buttons
         function checkAd(event, url) {
             if(adStatusDirect === 'on' && directLinks.length > 0) {
                 event.preventDefault();
@@ -361,7 +385,6 @@ ADMIN_HTML = """
                 </h4>
                 <a href="/admin"><i class="fas fa-tachometer-alt me-2"></i> ড্যাশবোর্ড</a>
                 
-                <!-- 🚀 NEW FEATURE: ONLY MAIN ADMIN SEES DOMAINS MENU -->
                 {% if is_main %}
                 <a href="/admin/domains" style="color: #ffc107;"><i class="fas fa-globe me-2"></i> 🌐 কাস্টম ডোমেন এড</a>
                 {% endif %}
@@ -370,6 +393,11 @@ ADMIN_HTML = """
                 <a href="/admin/all_movies"><i class="fas fa-list me-2"></i> অল মুভি ও ডিলেট</a>
                 <a href="/admin/options"><i class="fas fa-tags me-2"></i> ব্যাজ/ক্যাটাগরি এড</a>
                 <a href="/admin/settings"><i class="fas fa-cog me-2"></i> সেটিংস ও এডস</a>
+                
+                <!-- 🚀 NEW: TELEGRAM & RESET MENU -->
+                <a href="/admin/telegram"><i class="fab fa-telegram me-2"></i> টেলিগ্রাম বট</a>
+                <a href="/admin/reset_movies" onclick="return confirm('আপনি কি সব হিডেন/ডিলেট করা মুভি ফিরিয়ে আনতে চান?');"><i class="fas fa-sync-alt me-2"></i> মুভি রিসেট (Restore)</a>
+
                 <a href="/" target="_blank"><i class="fas fa-external-link-alt me-2"></i> সাইট দেখুন</a>
                 <a href="/logout" class="text-danger mt-5"><i class="fas fa-sign-out-alt me-2"></i> লগআউট</a>
             </div>
@@ -392,6 +420,8 @@ ADMIN_HTML = """
                     <option value="/admin/all_movies">অল মুভি</option>
                     <option value="/admin/options">ব্যাজ/ক্যাটাগরি</option>
                     <option value="/admin/settings">সেটিংস</option>
+                    <option value="/admin/telegram">টেলিগ্রাম বট</option>
+                    <option value="/admin/reset_movies">মুভি রিসেট</option>
                     <option value="/">সাইট দেখুন</option>
                     <option value="/logout">লগআউট</option>
                 </select>
@@ -430,7 +460,7 @@ def home():
     tenant = get_tenant()
     host = tenant.get('host')
     
-    # Cache System for high traffic (100M Users)
+    # Cache System for high traffic
     cached_html = get_cached_data('home_page', host)
     if cached_html:
         return cached_html
@@ -439,9 +469,12 @@ def home():
     limits = settings.get('limits', {})
     promos = settings.get('promos', [])
     
-    top_slider = list(movies_col.find().sort('views', -1).limit(5))
+    # 🚀 EXCLUDE HIDDEN MOVIES
+    hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
+    query_exclude = {"_id": {"$nin": hidden_ids}}
+
+    top_slider = list(movies_col.find(query_exclude).sort('views', -1).limit(5))
     
-    # Auto Dynamic Categories Extraction
     active_types = movies_col.distinct("type")
     all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
     ordered_types = ["Movie", "Series", "Episode", "Anime"]
@@ -451,14 +484,14 @@ def home():
     for t in all_types:
         if t != "Episode":
             lim = int(limits.get(t, 12))
-            items = list(movies_col.find({"type": t}).sort('_id', -1).limit(lim))
+            items = list(movies_col.find({"type": t, "_id": {"$nin": hidden_ids}}).sort('_id', -1).limit(lim))
             if items:
                 sections[t] = items
     
     # LATEST EPISODES EXTRACTION
     lim_e = int(limits.get('Episode', 12))
     latest_episodes = []
-    recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama", "Anime"]}}).sort('_id', -1).limit(20))
+    recent_series_dramas = list(movies_col.find({"type": {"$in": ["Series", "Drama", "Anime"]}, "_id": {"$nin": hidden_ids}}).sort('_id', -1).limit(20))
     for s_obj in recent_series_dramas:
         for season in reversed(s_obj.get('seasons', [])):
             for ep in reversed(season.get('episodes', [])):
@@ -503,13 +536,11 @@ def home():
         {% endfor %}
     </div>
 
-    <!-- 1. TOP MOVIE SLIDER WITH LANDSCAPE POSTER FIX -->
     <div id="topMoviesCarousel" class="carousel slide mb-4 rounded overflow-hidden shadow-lg border border-secondary" data-bs-ride="carousel">
         <div class="carousel-inner">
             {% for m in top_slider %}
             <div class="carousel-item {% if loop.first %}active{% endif %}">
                 <a href="/movie/{{ m._id }}" onclick="handleMovieClick(event, this.href)">
-                    <!-- FIX: aspect-ratio ensures 100% visibility on all devices without crop -->
                     <div style="width: 100%; aspect-ratio: 16/9; max-height: 500px; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat; position: relative;">
                         <div class="carousel-caption text-start px-md-5 pb-md-5">
                             <h2 class="fw-bold text-white shadow-sm" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.8);">{{ m.title }}</h2>
@@ -531,7 +562,6 @@ def home():
     
     """ + promo_html + """
 
-    <!-- 2. MOVIES SECTION -->
     {% if sections.get('Movie') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-primary border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-primary">Latest Movies</h3>
@@ -561,7 +591,6 @@ def home():
     """ + promo_html + """
     {% endif %}
 
-    <!-- 3. SERIES SECTION -->
     {% if sections.get('Series') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-success border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-success">Latest Series</h3>
@@ -588,12 +617,10 @@ def home():
     """ + promo_html + """
     {% endif %}
 
-    <!-- GLOBAL MIDDLE AD -->
     {% if settings.get('ad_middle') %}
         <div class="w-100 text-center my-4">{{ settings.get('ad_middle') | safe }}</div>
     {% endif %}
 
-    <!-- 4. LATEST EPISODES SECTION (3 IN LINE ON MOBILE) -->
     {% if latest_episodes %}
     <div class="d-flex justify-content-between align-items-center mt-4 mb-3 border-start border-info border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-info">Latest Episodes</h3>
@@ -604,10 +631,8 @@ def home():
             <div class="movie-card" style="border-color: #0dcaf0;">
                 <div class="poster-wrapper-landscape">
                     {% if ep.m_badge %}<span class="movie-badge">{{ ep.m_badge }}</span>{% endif %}
-                    <!-- EPISODE POSTER Fallback sequence -->
                     <img src="{{ ep.poster or ep.m_backdrop or ep.m_poster }}" alt="Episode" class="movie-poster" onerror="this.src='https://via.placeholder.com/600x337?text=No+Poster'">
                 </div>
-                <!-- Small padding for mobile fit -->
                 <div class="movie-info text-start p-2 p-md-3">
                     <div class="movie-title fw-bold text-info mb-1" style="font-size: 11px;">{{ ep.series_title }}</div>
                     <div class="movie-meta justify-content-start">
@@ -627,7 +652,6 @@ def home():
     """ + promo_html + """
     {% endif %}
     
-    <!-- 5. ANIME SECTION -->
     {% if sections.get('Anime') %}
     <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-danger border-4 ps-3">
         <h3 class="fw-bold text-uppercase m-0 text-danger">Latest Anime</h3>
@@ -653,7 +677,6 @@ def home():
     """ + promo_html + """
     {% endif %}
     
-    <!-- 6. ALL OTHER DYNAMIC SECTIONS (Drama, etc) -->
     {% for t in other_types %}
         {% if sections.get(t) %}
         <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-warning border-4 ps-3">
@@ -687,13 +710,15 @@ def home():
     """)
     
     rendered_html = render_frontend(html, page_name='home', top_slider=top_slider, sections=sections, latest_episodes=latest_episodes, other_types=other_types, categories=categories, promos=promos)
-    set_cached_data('home_page', host, rendered_html) # Save to Custom Domain Cache
+    set_cached_data('home_page', host, rendered_html)
     return rendered_html
 
 @app.route('/search')
 def search():
+    tenant = get_tenant()
+    hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
     query = request.args.get('q', '')
-    movies = list(movies_col.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
+    movies = list(movies_col.find({"title": {"$regex": query, "$options": "i"}, "_id": {"$nin": hidden_ids}}).sort('_id', -1))
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h3 class="mb-4 border-start border-primary border-4 ps-3">Search Results for: <span class="text-warning">{{ query }}</span></h3>
     <div class="movie-grid">
@@ -730,16 +755,16 @@ def category_filter(cat_name):
     
     cache_key = f"cat_{cat_name}"
     cached_html = get_cached_data(cache_key, host)
-    if cached_html:
-        return cached_html
+    if cached_html: return cached_html
 
+    hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
     active_types = db.movies.distinct("type")
     all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
     
     if cat_name in all_types:
-        movies = list(movies_col.find({"type": cat_name}).sort('_id', -1))
+        movies = list(movies_col.find({"type": cat_name, "_id": {"$nin": hidden_ids}}).sort('_id', -1))
     else:
-        movies = list(movies_col.find({"categories": cat_name}).sort('_id', -1))
+        movies = list(movies_col.find({"categories": cat_name, "_id": {"$nin": hidden_ids}}).sort('_id', -1))
     
     categories = list(options_col.find({"type": "category"}))
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
@@ -782,7 +807,9 @@ def movie_details(id):
     tenant = get_tenant()
     host = tenant.get('host')
     
-    # 🚀 EXPIRE LOCK CHECK FOR DETAIL PAGE
+    if str(id) in tenant.get('hidden_movies', []):
+        return "<h2 style='text-align:center;color:red;margin-top:50px;'>This movie has been removed from this site.</h2>", 404
+
     is_locked = not tenant.get('is_main') and tenant.get('expire_at', 0) < time.time()
     if is_locked:
         return f"<h1 style='color:#ff4444; text-align:center; margin-top:50px; font-family:sans-serif;'>⚠️ ডোমেন ({host}) এর সাবস্ক্রিপশন মেয়াদ শেষ!</h1><h3 style='color:#fff; text-align:center; font-family:sans-serif;'>রেনিউ করতে দয়া করে মেইন এডমিনের সাথে যোগাযোগ করুন।</h3>", 403
@@ -790,25 +817,20 @@ def movie_details(id):
     cache_key = f"movie_{id}"
     cached_html = get_cached_data(cache_key, host)
     
-    # Update view count asynchronously
     movies_col.update_one({"_id": ObjectId(id)}, {"$inc": {"views": 1}})
-
-    if cached_html:
-        return cached_html
+    if cached_html: return cached_html
 
     movie = movies_col.find_one({"_id": ObjectId(id)})
     if not movie: return "Not Found", 404
     
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="row mt-3">
-        <!-- FULL WIDTH LANDSCAPE BANNER HEADER FIX -->
         <div class="col-12 mb-3">
             <div class="position-relative w-100 shadow-lg border border-secondary" style="aspect-ratio: 16/9; max-height: 60vh; border-radius: 12px; overflow: hidden; background: url('{{ m.backdrop or m.poster }}') center/cover no-repeat;">
                 {% if m.badge %}<span class="movie-badge shadow-lg" style="font-size: 16px; padding: 6px 20px; top: 15px; right: 15px;">{{ m.badge }}</span>{% endif %}
             </div>
         </div>
         
-        <!-- TITLE AND TAGS MOVED OUTSIDE POSTER FOR CLEAN VIEW -->
         <div class="col-12 mb-4">
             <h1 class="fw-bold text-white mb-3 mt-2" style="text-shadow: 1px 1px 3px #000;">{{ m.title }}</h1>
             <div class="d-flex flex-wrap gap-2 mb-3">
@@ -864,7 +886,6 @@ def movie_details(id):
             {% else %}
                 <h3 class="mb-4 fw-bold border-start border-warning border-4 ps-3">Seasons & Episodes</h3>
                 
-                <!-- Vertical Scroll for Seasons -->
                 <div class="p-3 border border-secondary rounded mb-4 shadow-sm" style="background:#151b2b; max-height: 350px; overflow-y: auto; scrollbar-width: thin;">
                     <ul class="nav nav-pills flex-column gap-3" id="seasonTabs" role="tablist">
                         {% for s in m.seasons %}
@@ -880,16 +901,12 @@ def movie_details(id):
                 <div class="tab-content" id="seasonTabsContent">
                     {% for s in m.seasons %}
                     <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="season_{{ s.season }}" role="tabpanel">
-                        
-                        <!-- Episodes Grid Desktop Optimized -->
                         <div class="row g-3">
                             {% for ep in s.episodes %}
                                 <div class="col-12 col-xl-6">
                                     <div class="ep-box p-3">
-                                        <!-- EPISODE POSTER INCLUDED HERE -->
                                         <button class="btn btn-outline-primary w-100 text-start fw-bold d-flex justify-content-between align-items-center p-3" data-bs-toggle="collapse" data-bs-target="#links_S{{s.season}}_E{{ep.episode}}">
                                             <div class="d-flex align-items-center gap-4">
-                                                <!-- Thumb Image: Episode Poster fallback to main backdrop fallback to portrait -->
                                                 <img src="{{ ep.poster or m.backdrop or m.poster }}" class="shadow-sm" style="width: 140px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #2d3748;" onerror="this.src='{{ m.backdrop or m.poster }}'">
                                                 <div>
                                                     <span class="fs-5 text-white d-block mb-1"><i class="fas fa-tv me-2"></i> 
@@ -1008,9 +1025,13 @@ def logout():
 @app.route('/admin')
 @login_required
 def admin_dashboard():
-    total_movies = movies_col.count_documents({"type": "Movie"})
-    total_series = movies_col.count_documents({"type": {"$in": ["Series", "Drama"]}})
-    total_views = sum([m.get('views', 0) for m in movies_col.find()])
+    tenant = get_tenant()
+    hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
+    
+    total_movies = movies_col.count_documents({"type": "Movie", "_id": {"$nin": hidden_ids}})
+    total_series = movies_col.count_documents({"type": {"$in": ["Series", "Drama"]}, "_id": {"$nin": hidden_ids}})
+    total_views = sum([m.get('views', 0) for m in movies_col.find({"_id": {"$nin": hidden_ids}})])
+    
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">ড্যাশবোর্ড (Dashboard)</h2>
     <div class="row">
@@ -1036,45 +1057,29 @@ def admin_dashboard():
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_admin(html, tm=total_movies, ts=total_series, tv=total_views)
 
-
-# ==========================================
-# VERCEL API FUNCTIONS FOR AUTO DOMAIN ADD/REMOVE
-# ==========================================
+# VERCEL API FUNCTIONS
 def add_domain_to_vercel(domain):
     VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN", "your_vercel_token_here")
     PROJECT_ID = os.environ.get("VERCEL_PROJECT_ID", "your_project_id_here")
-    
     if VERCEL_TOKEN == "your_vercel_token_here" or not VERCEL_TOKEN:
         return False, "Vercel Token বা Project ID সেট করা নেই!"
-
-    headers = {
-        "Authorization": f"Bearer {VERCEL_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {VERCEL_TOKEN}", "Content-Type": "application/json"}
     url = f"https://api.vercel.com/v10/projects/{PROJECT_ID}/domains"
     try:
         res = requests.post(url, headers=headers, json={"name": domain})
-        if res.status_code in [200, 201]: 
-            return True, "API Success: ভার্সেলে ডোমেইন অটোমেটিক এড হয়েছে!"
-        else: 
-            return False, f"API Error: {res.json().get('error', {}).get('message', 'Unknown Error')}"
-    except Exception as e:
-        return False, str(e)
+        if res.status_code in [200, 201]: return True, "API Success: ভার্সেলে ডোমেইন অটোমেটিক এড হয়েছে!"
+        else: return False, f"API Error: {res.json().get('error', {}).get('message', 'Unknown Error')}"
+    except Exception as e: return False, str(e)
 
 def remove_domain_from_vercel(domain):
     VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN", "your_vercel_token_here")
     PROJECT_ID = os.environ.get("VERCEL_PROJECT_ID", "your_project_id_here")
-    if VERCEL_TOKEN == "your_vercel_token_here" or not VERCEL_TOKEN: 
-        return
+    if VERCEL_TOKEN == "your_vercel_token_here" or not VERCEL_TOKEN: return
     headers = {"Authorization": f"Bearer {VERCEL_TOKEN}"}
     url = f"https://api.vercel.com/v9/projects/{PROJECT_ID}/domains/{domain}"
-    try: 
-        requests.delete(url, headers=headers)
-    except: 
-        pass
+    try: requests.delete(url, headers=headers)
+    except: pass
 
-
-# 🚀 NEW FEATURE: UNLIMITED CUSTOM DOMAINS MANAGEMENT (.com / .xyz) & DNS GENERATOR
 @app.route('/admin/domains', methods=['GET', 'POST'])
 @login_required
 def manage_domains():
@@ -1082,20 +1087,26 @@ def manage_domains():
     if not tenant.get('is_main'):
         return "<h2 style='color:red;'>Access Denied. Only Main Admin can manage Domains.</h2>", 403
         
-    dns_info = None # নতুন ডোমেন এড করলে DNS ইনফো দেখানোর জন্য
+    dns_info = None 
         
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
             host = request.form.get('host').strip().lower()
-            # Remove http:// or www. if typed accidentally
             host = host.replace("http://", "").replace("https://", "").replace("www.", "").strip('/')
-            
             user = request.form.get('admin_user').strip()
             password = request.form.get('admin_pass').strip()
             price = request.form.get('price', 0)
-            months = int(request.form.get('months', 1))
-            expire_at = time.time() + (months * 30 * 24 * 3600) # Calculate exact lock date
+            
+            # 🚀 NEW: Advanced Duration Calculation for Add
+            y = int(request.form.get('years', 0))
+            mo = int(request.form.get('months', 0))
+            d = int(request.form.get('days', 0))
+            h = int(request.form.get('hours', 0))
+            m = int(request.form.get('mins', 0))
+            s = int(request.form.get('secs', 0))
+            add_secs = (y * 31536000) + (mo * 2592000) + (d * 86400) + (h * 3600) + (m * 60) + s
+            expire_at = time.time() + add_secs
             
             if domains_col.find_one({"host": host}):
                 flash("Error: এই ডোমেনটি আগেই তৈরি করা আছে!")
@@ -1107,32 +1118,31 @@ def manage_domains():
                     "admin_pass": password,
                     "price_paid": int(price),
                     "expire_at": expire_at,
-                    "settings": tenant.get('settings', {}) # Copy initial settings from main site
+                    "hidden_movies": [],
+                    "settings": tenant.get('settings', {}) 
                 })
-                
-                # 🚀 Vercel API Call - Auto Add Domain
                 api_success, api_msg = add_domain_to_vercel(host)
-                
-                # ডোমেন এড হওয়ার পর DNS রেকর্ড জেনারেট করা হচ্ছে (For Vercel)
-                dns_info = {
-                    "domain": host,
-                    "a_record": "76.76.21.21", 
-                    "cname": "cname.vercel-dns.com",
-                    "api_status": api_msg,
-                    "api_success": api_success
-                }
+                dns_info = {"domain": host, "a_record": "76.76.21.21", "cname": "cname.vercel-dns.com", "api_status": api_msg, "api_success": api_success}
                 flash(f"ডোমেন {host} সফলভাবে ডাটাবেসে যুক্ত হয়েছে!")
                 
         elif action == 'renew':
             tenant_id = request.form.get('tenant_id')
-            months = int(request.form.get('months', 1))
             price = request.form.get('price', 0)
+            
+            # 🚀 NEW: Advanced Duration Calculation for Renew
+            y = int(request.form.get('years', 0))
+            mo = int(request.form.get('months', 0))
+            d = int(request.form.get('days', 0))
+            h = int(request.form.get('hours', 0))
+            m = int(request.form.get('mins', 0))
+            s = int(request.form.get('secs', 0))
+            add_secs = (y * 31536000) + (mo * 2592000) + (d * 86400) + (h * 3600) + (m * 60) + s
+            
             t = domains_col.find_one({"_id": ObjectId(tenant_id)})
             if t:
                 current_expire = t.get('expire_at', time.time())
-                if current_expire < time.time():
-                    current_expire = time.time() # Start from today if already expired
-                new_expire = current_expire + (months * 30 * 24 * 3600)
+                if current_expire < time.time(): current_expire = time.time()
+                new_expire = current_expire + add_secs
                 domains_col.update_one({"_id": ObjectId(tenant_id)}, {"$set": {"expire_at": new_expire}, "$inc": {"price_paid": int(price)}})
                 flash("ডোমেনটির মেয়াদ সফলভাবে বাড়ানো হয়েছে!")
                 return redirect(url_for('manage_domains'))
@@ -1140,10 +1150,7 @@ def manage_domains():
         elif action == 'delete':
             tenant_id = request.form.get('tenant_id')
             t = domains_col.find_one({"_id": ObjectId(tenant_id)})
-            if t:
-                # 🚀 Vercel API Call - Auto Remove Domain
-                remove_domain_from_vercel(t['host'])
-            
+            if t: remove_domain_from_vercel(t['host'])
             domains_col.delete_one({"_id": ObjectId(tenant_id)})
             flash("ডোমেনটি সফলভাবে মুছে ফেলা হয়েছে!")
             return redirect(url_for('manage_domains'))
@@ -1152,46 +1159,28 @@ def manage_domains():
     current_time = time.time()
     
     import datetime
-    def format_time(ts):
-        return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
+    def format_time(ts): return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
 
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">কাস্টম ডোমেন ও DNS ম্যানেজমেন্ট</h2>
     
     {% if dns_info %}
-    <!-- 🚀 ডোমেন এড করার পর DNS রেকর্ড শো করবে -->
     <div class="card p-4 mb-4 border-warning shadow" style="background:#1e2738;">
         <h4 class="text-warning fw-bold mb-3"><i class="fas fa-server"></i> ডোমেন কানেক্ট করার নিয়ম</h4>
         <p class="text-white"><b>{{ dns_info.domain }}</b> সাইটটি লাইভ করার জন্য ক্লায়েন্টকে তার ডোমেন প্যানেলে (Cloudflare/Namecheap) গিয়ে নিচের রেকর্ড দুটি বসাতে বলুন:</p>
-        
         <div class="table-responsive">
             <table class="table table-bordered table-dark text-center align-middle">
                 <thead><tr class="text-info"><th>Type</th><th>Name / Host</th><th>Value / Target</th></tr></thead>
                 <tbody>
-                    <tr>
-                        <td><span class="badge bg-primary fs-6">A Record</span></td>
-                        <td class="fw-bold">@</td>
-                        <td class="text-success fw-bold fs-5">{{ dns_info.a_record }}</td>
-                    </tr>
-                    <tr>
-                        <td><span class="badge bg-info fs-6">CNAME</span></td>
-                        <td class="fw-bold">www</td>
-                        <td class="text-warning fw-bold fs-5">{{ dns_info.cname }}</td>
-                    </tr>
+                    <tr><td><span class="badge bg-primary fs-6">A Record</span></td><td class="fw-bold">@</td><td class="text-success fw-bold fs-5">{{ dns_info.a_record }}</td></tr>
+                    <tr><td><span class="badge bg-info fs-6">CNAME</span></td><td class="fw-bold">www</td><td class="text-warning fw-bold fs-5">{{ dns_info.cname }}</td></tr>
                 </tbody>
             </table>
         </div>
-        
-        <!-- API STATUS ALERT -->
         {% if dns_info.api_success %}
-        <div class="alert alert-success p-2 mt-2">
-            <i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে না। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!
-        </div>
+        <div class="alert alert-success p-2 mt-2"><i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে না। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!</div>
         {% else %}
-        <div class="alert alert-danger p-2 mt-2">
-            <i class="fas fa-exclamation-triangle"></i> <b>API Failed:</b> {{ dns_info.api_status }}<br>
-            <i>(আপনাকে হয়তো ডোমেইনটি ম্যানুয়ালি Vercel Dashboard-এ গিয়ে Settings > Domains থেকে Add করতে হবে।)</i>
-        </div>
+        <div class="alert alert-danger p-2 mt-2"><i class="fas fa-exclamation-triangle"></i> <b>API Failed:</b> {{ dns_info.api_status }}<br><i>(আপনাকে হয়তো ডোমেইনটি ম্যানুয়ালি Vercel Dashboard-এ গিয়ে Settings > Domains থেকে Add করতে হবে।)</i></div>
         {% endif %}
     </div>
     {% endif %}
@@ -1201,13 +1190,22 @@ def manage_domains():
         <form method="POST">
             <input type="hidden" name="action" value="add">
             <div class="row">
-                <div class="col-md-3 mb-3"><label>Custom Domain (Ex: movies.com)</label><input type="text" name="host" class="form-control border-success" placeholder="example.com" required></div>
+                <div class="col-md-3 mb-3"><label>Custom Domain (Ex: movies.com)</label><input type="text" name="host" class="form-control border-success" required></div>
                 <div class="col-md-3 mb-3"><label>Client Username</label><input type="text" name="admin_user" class="form-control" required></div>
                 <div class="col-md-2 mb-3"><label>Client Password</label><input type="text" name="admin_pass" class="form-control" required></div>
                 <div class="col-md-2 mb-3"><label>Price Paid (৳)</label><input type="number" name="price" class="form-control" value="0"></div>
-                <div class="col-md-2 mb-3"><label>Duration (Months)</label><input type="number" name="months" class="form-control" value="1" min="1"></div>
             </div>
-            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Auto Add to Vercel</button>
+            <!-- 🚀 ADVANCED DURATION -->
+            <label class="text-info fw-bold mb-2">Select Subscription Duration:</label>
+            <div class="row g-2 mb-3 bg-dark p-2 rounded border border-secondary">
+                <div class="col"><input type="number" name="years" class="form-control form-control-sm" placeholder="Years" value="0"></div>
+                <div class="col"><input type="number" name="months" class="form-control form-control-sm" placeholder="Months" value="1"></div>
+                <div class="col"><input type="number" name="days" class="form-control form-control-sm" placeholder="Days" value="0"></div>
+                <div class="col"><input type="number" name="hours" class="form-control form-control-sm" placeholder="Hours" value="0"></div>
+                <div class="col"><input type="number" name="mins" class="form-control form-control-sm" placeholder="Mins" value="0"></div>
+                <div class="col"><input type="number" name="secs" class="form-control form-control-sm" placeholder="Secs" value="0"></div>
+            </div>
+            <button type="submit" class="btn btn-success w-100 fw-bold fs-5">Generate DNS & Add Domain</button>
         </form>
     </div>
 
@@ -1215,16 +1213,7 @@ def manage_domains():
         <h4 class="text-info fw-bold mb-3"><i class="fas fa-list"></i> অল ডোমেন লিস্ট</h4>
         <div class="table-responsive">
             <table class="table table-dark table-hover align-middle border-secondary">
-                <thead>
-                    <tr class="text-warning">
-                        <th>Domain / URL</th>
-                        <th>User / Pass</th>
-                        <th>Total Paid</th>
-                        <th>Expire Date</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
+                <thead><tr class="text-warning"><th>Domain / URL</th><th>User / Pass</th><th>Total Paid</th><th>Expire Date</th><th>Status</th><th>Action (Renew/Delete)</th></tr></thead>
                 <tbody>
                     {% for sub in domains_list %}
                     <tr>
@@ -1232,27 +1221,29 @@ def manage_domains():
                         <td>{{ sub.admin_user }} / {{ sub.admin_pass }}</td>
                         <td class="text-success">{{ sub.price_paid }} ৳</td>
                         <td>{{ format_time(sub.expire_at) }}</td>
+                        <td>{% if sub.expire_at < current_time %}<span class="badge bg-danger fs-6">Locked</span>{% else %}<span class="badge bg-success fs-6">Active</span>{% endif %}</td>
                         <td>
-                            {% if sub.expire_at < current_time %}
-                                <span class="badge bg-danger fs-6">Locked</span>
-                            {% else %}
-                                <span class="badge bg-success fs-6">Active</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <!-- Renew System -->
-                            <form method="POST" class="d-inline border p-1 rounded border-secondary" style="background: rgba(255,255,255,0.05);">
+                            <form method="POST" class="border p-2 rounded border-secondary" style="background: rgba(255,255,255,0.05);">
                                 <input type="hidden" name="action" value="renew">
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
-                                <input type="number" name="months" class="form-control form-control-sm d-inline" style="width:70px;" value="1" min="1" placeholder="Months">
-                                <input type="number" name="price" class="form-control form-control-sm d-inline" style="width:80px;" value="0" placeholder="Price">
-                                <button type="submit" class="btn btn-sm btn-primary fw-bold">Renew</button>
+                                
+                                <div class="d-flex flex-wrap gap-1 mb-2">
+                                    <input type="number" name="years" class="form-control form-control-sm" style="width:60px;" placeholder="Yr" value="0">
+                                    <input type="number" name="months" class="form-control form-control-sm" style="width:60px;" placeholder="Mo" value="1">
+                                    <input type="number" name="days" class="form-control form-control-sm" style="width:60px;" placeholder="Dy" value="0">
+                                    <input type="number" name="hours" class="form-control form-control-sm" style="width:60px;" placeholder="Hr" value="0">
+                                    <input type="number" name="mins" class="form-control form-control-sm" style="width:60px;" placeholder="Mn" value="0">
+                                    <input type="number" name="secs" class="form-control form-control-sm" style="width:60px;" placeholder="Sc" value="0">
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <input type="number" name="price" class="form-control form-control-sm d-inline" style="width:80px;" value="0" placeholder="Price">
+                                    <button type="submit" class="btn btn-sm btn-primary fw-bold">Renew</button>
+                                </div>
                             </form>
-                            <!-- Delete System -->
-                            <form method="POST" class="d-inline ms-2" onsubmit="return confirm('ডোমেনটি কি ডিলেট করতে চান? এটি Vercel থেকেও ডিলেট হয়ে যাবে!');">
+                            <form method="POST" class="mt-2 text-end" onsubmit="return confirm('ডোমেনটি কি ডিলেট করতে চান? এটি Vercel থেকেও ডিলেট হয়ে যাবে!');">
                                 <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="tenant_id" value="{{ sub._id }}">
-                                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                <button type="submit" class="btn btn-sm btn-outline-danger w-100"><i class="fas fa-trash"></i> Delete Site</button>
                             </form>
                         </td>
                     </tr>
@@ -1263,6 +1254,78 @@ def manage_domains():
     </div>
     """).replace('<!-- SCRIPTS_BLOCK -->', "")
     return render_admin(html, domains_list=domains_list, format_time=format_time, current_time=current_time, dns_info=dns_info)
+
+# 🚀 NEW: TELEGRAM SETTINGS
+@app.route('/admin/telegram', methods=['GET', 'POST'])
+@login_required
+def admin_telegram():
+    tenant = get_tenant()
+    if request.method == 'POST':
+        clear_cache()
+        tg_settings = {
+            "bot_token": request.form.get("bot_token", ""),
+            "channel_id": request.form.get("channel_id", ""),
+            "site_url": request.form.get("site_url", ""),
+            "tutorial_link": request.form.get("tutorial_link", ""),
+            "auto_post": request.form.get("auto_post") == 'on'
+        }
+        domains_col.update_one({"_id": tenant['_id']}, {"$set": {"settings.telegram": tg_settings}})
+        flash("আপনার টেলিগ্রাম সেটিংস সফলভাবে আপডেট হয়েছে!")
+        return redirect(url_for('admin_telegram'))
+    
+    tg = tenant.get('settings', {}).get('telegram', {})
+    html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
+    <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">টেলিগ্রাম বট নোটিফিকেশন সিস্টেম</h2>
+    <form method="POST" class="card p-4 border-info shadow">
+        <div class="alert alert-secondary bg-dark text-info"><i class="fas fa-info-circle"></i> প্রতিটি ডোমেনের জন্য আলাদা টেলিগ্রাম বট ও চ্যানেল আইডি ব্যবহার করতে পারবেন।</div>
+        
+        <div class="row mb-3">
+            <div class="col-md-6 mb-3">
+                <label>Telegram Bot Token (বট ফাদার থেকে নিন)</label>
+                <input type="text" name="bot_token" class="form-control" value="{{ tg.get('bot_token', '') }}" placeholder="123456789:ABCDefgh...">
+            </div>
+            <div class="col-md-6 mb-3">
+                <label>Channel ID (চ্যানেল আইডি -100...)</label>
+                <input type="text" name="channel_id" class="form-control" value="{{ tg.get('channel_id', '') }}" placeholder="-1001234567890">
+            </div>
+            <div class="col-md-6 mb-3">
+                <label>Your Site URL (পোস্টের সাথে যে লিংক যাবে)</label>
+                <input type="url" name="site_url" class="form-control" value="{{ tg.get('site_url', '') }}" placeholder="https://yourdomain.com">
+            </div>
+            <div class="col-md-6 mb-3">
+                <label>Tutorial Video URL (কিভাবে ডাউনলোড করবে)</label>
+                <input type="url" name="tutorial_link" class="form-control" value="{{ tg.get('tutorial_link', '') }}" placeholder="https://youtube.com/...">
+            </div>
+        </div>
+        
+        <div class="form-check form-switch mb-4 ms-2">
+            <input class="form-check-input bg-primary border-0" type="checkbox" name="auto_post" id="auto_post" style="transform: scale(1.5);" {% if tg.get('auto_post') %}checked{% endif %}>
+            <label class="form-check-label fw-bold text-warning ms-3 mt-1" for="auto_post">Auto Send to Telegram on Publish (মুভি পোস্ট করলে অটো সেন্ড হবে)</label>
+        </div>
+        
+        <button type="submit" class="btn btn-primary fw-bold w-100 fs-5"><i class="fas fa-save"></i> Save Telegram Settings</button>
+    </form>
+    """).replace('<!-- SCRIPTS_BLOCK -->', "")
+    return render_admin(html, tg=tg)
+
+# 🚀 NEW: RESET MOVIES (Restore Hidden)
+@app.route('/admin/reset_movies')
+@login_required
+def reset_movies():
+    tenant = get_tenant()
+    clear_cache()
+    if not tenant.get('is_main'):
+        domains_col.update_one({"_id": tenant['_id']}, {"$set": {"hidden_movies": []}})
+    flash("সফলভাবে সব ডিলেট/হাইড করা মুভি পুনরায় আপনার সাইটে রিস্টোর করা হয়েছে!")
+    return redirect(url_for('all_movies'))
+
+# 🚀 NEW: MANUAL TELEGRAM SEND
+@app.route('/admin/send_tg/<id>')
+@login_required
+def send_tg_manual(id):
+    send_tg_alert(get_tenant(), id)
+    flash("টেলিগ্রাম চ্যানেলে মুভিটি সফলভাবে পোস্ট করা হয়েছে!")
+    return redirect(url_for('all_movies'))
 
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @login_required
@@ -1288,6 +1351,7 @@ def admin_settings():
         new_settings = {
             "site_name": request.form.get('site_name', 'DooPlay Pro'),
             "site_logo": request.form.get('site_logo', ''),
+            "telegram": tenant.get('settings', {}).get('telegram', {}), # Keep telegram settings intact
             "ad_status_banner": request.form.get('ad_status_banner'),
             "ad_status_direct": request.form.get('ad_status_direct'),
             "ad_banner_home_desktop": request.form.get('ad_banner_home_desktop'),
@@ -1310,12 +1374,7 @@ def admin_settings():
         new_user = request.form.get('admin_user')
         new_pass = request.form.get('admin_pass')
         
-        # Save specific to this Domain
-        domains_col.update_one({"_id": tenant['_id']}, {"$set": {
-            "admin_user": new_user,
-            "admin_pass": new_pass,
-            "settings": new_settings
-        }})
+        domains_col.update_one({"_id": tenant['_id']}, {"$set": {"admin_user": new_user, "admin_pass": new_pass, "settings": new_settings}})
         flash("আপনার সাইটের সেটিংস এবং অ্যাডস সফলভাবে আপডেট হয়েছে!")
         return redirect(url_for('admin_settings'))
     
@@ -1449,7 +1508,7 @@ def admin_settings():
 
         <h5 class="text-primary border-bottom border-secondary pb-2"><i class="fas fa-bullhorn"></i> Notice & Telegram</h5>
         <div class="row mb-4">
-            <div class="col-md-12 mb-2"><label>Telegram Link</label><input type="text" name="telegram_link" class="form-control" value="{{ s.get('telegram_link', '') }}"></div>
+            <div class="col-md-12 mb-2"><label>Telegram Group/Channel Link</label><input type="text" name="telegram_link" class="form-control" value="{{ s.get('telegram_link', '') }}"></div>
             <div class="col-md-12 mb-2"><label>General Notice (Top bar)</label><input type="text" name="notice" class="form-control" value="{{ s.get('notice', '') }}"></div>
         </div>
         
@@ -1562,15 +1621,12 @@ def tmdb_search():
     query = request.args.get('q')
     tenant = get_tenant()
     
-    # Check if Domain has API Key, else fallback to Main Admin Key
     api_key = tenant.get('settings', {}).get('tmdb_api_key')
     if not api_key:
         main_tenant = domains_col.find_one({"is_main": True})
-        if main_tenant:
-            api_key = main_tenant.get('settings', {}).get('tmdb_api_key')
+        if main_tenant: api_key = main_tenant.get('settings', {}).get('tmdb_api_key')
 
-    if not api_key or not query:
-        return jsonify([])
+    if not api_key or not query: return jsonify([])
     
     url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={query}&language=en-US&page=1"
     try:
@@ -1581,16 +1637,9 @@ def tmdb_search():
                 title = item.get('title') if item.get('media_type') == 'movie' else item.get('name')
                 date = item.get('release_date') if item.get('media_type') == 'movie' else item.get('first_air_date')
                 poster = f"https://image.tmdb.org/t/p/w92{item.get('poster_path')}" if item.get('poster_path') else "https://via.placeholder.com/92x138?text=No+Image"
-                results.append({
-                    'id': item.get('id'),
-                    'title': title,
-                    'type': item.get('media_type'),
-                    'date': date,
-                    'poster': poster
-                })
+                results.append({'id': item.get('id'), 'title': title, 'type': item.get('media_type'), 'date': date, 'poster': poster})
         return jsonify(results)
-    except:
-        return jsonify([])
+    except: return jsonify([])
 
 @app.route('/admin/add_movie', methods=['GET', 'POST'])
 @login_required
@@ -1600,7 +1649,7 @@ def add_movie():
     all_types = list(set(active_types + ["Movie", "Series", "Drama", "Anime"]))
     
     if request.method == 'POST':
-        clear_cache() # Clear global cache so it syncs across all domains
+        clear_cache()
         action = request.form.get('action')
         
         if action == 'fetch_tmdb':
@@ -1610,8 +1659,7 @@ def add_movie():
             api_key = tenant.get('settings', {}).get('tmdb_api_key')
             if not api_key:
                 main_tenant = domains_col.find_one({"is_main": True})
-                if main_tenant:
-                    api_key = main_tenant.get('settings', {}).get('tmdb_api_key')
+                if main_tenant: api_key = main_tenant.get('settings', {}).get('tmdb_api_key')
 
             if not api_key:
                 flash("Error: TMDB API Key সেটিংসে দেওয়া নেই!")
@@ -1665,8 +1713,7 @@ def add_movie():
                     "title": title, "type": "Movie" if m_type == 'movie' else "Series",
                     "poster": poster, "backdrop": backdrop, "description": desc, "date": date,
                     "badge": "", "quality": "", "language": "English",
-                    "categories": genres, "views": 0,
-                    "links": []
+                    "categories": genres, "views": 0, "links": []
                 }
                 
                 if m_type == 'tv':
@@ -1685,12 +1732,16 @@ def add_movie():
                                     episodes.append({"episode": e_num, "ep_title": e_title, "poster": ep_poster, "links": []})
                             except:
                                 episodes = [{"episode": e, "ep_title": "", "poster": "", "links": []} for e in range(1, s.get('episode_count') + 1)]
-                                
                             seasons.append({"season": s_num, "episodes": episodes})
                     new_doc['seasons'] = seasons
                 
                 inserted_id = movies_col.insert_one(new_doc).inserted_id
                 flash(f"TMDB থেকে '{title}' ইমপোর্ট হয়েছে! এখন লিংক বসান।")
+                
+                # 🚀 TG Auto Post
+                if tenant.get('settings', {}).get('telegram', {}).get('auto_post'):
+                    send_tg_alert(tenant, str(inserted_id))
+                    
                 return redirect(f"/admin/edit_movie/{inserted_id}")
             except Exception as e:
                 flash(f"Error connecting to TMDB: {str(e)}")
@@ -1699,12 +1750,10 @@ def add_movie():
         elif action == 'manual_add':
             title = request.form.get('title')
             m_type = request.form.get('type')
-            
             link_names = request.form.getlist('link_name[]')
             link_quals = request.form.getlist('link_quality[]')
             link_urls = request.form.getlist('link_url[]')
             links = [{"name": n, "quality": q, "url": u} for n, q, u in zip(link_names, link_quals, link_urls) if n and u]
-            
             poster = request.form.get('poster')
             backdrop = request.form.get('backdrop', poster)
             
@@ -1712,16 +1761,19 @@ def add_movie():
                 "title": title, "type": m_type, "poster": poster, "backdrop": backdrop,
                 "badge": request.form.get('badge'), "quality": request.form.get('quality'),
                 "language": request.form.get('language'), "description": request.form.get('description'),
-                "categories": request.form.getlist('categories'), "views": 0,
-                "links": links
+                "categories": request.form.getlist('categories'), "views": 0, "links": links
             }
-            
             if m_type not in ['Movie']:
                 new_doc['seasons'] = [{"season": 1, "episodes": [{"episode": 1, "ep_title": "", "poster": "", "links": links}]}]
                 new_doc['links'] = []
                 
-            movies_col.insert_one(new_doc)
+            inserted_id = movies_col.insert_one(new_doc).inserted_id
             flash("ম্যানুয়ালি ডাটা যোগ করা হয়েছে!")
+            
+            # 🚀 TG Auto Post
+            if tenant.get('settings', {}).get('telegram', {}).get('auto_post'):
+                send_tg_alert(tenant, str(inserted_id))
+                
             return redirect(url_for('add_movie'))
 
     badges = list(options_col.find({"type": "badge"}))
@@ -2059,7 +2111,12 @@ def edit_movie(id):
 @app.route('/admin/all_movies')
 @login_required
 def all_movies():
-    movies = list(movies_col.find().sort('_id', -1))
+    tenant = get_tenant()
+    hidden_ids = [ObjectId(i) for i in tenant.get('hidden_movies', []) if ObjectId.is_valid(i)]
+    
+    # 🚀 Hide movies that this sub-domain admin has deleted
+    movies = list(movies_col.find({"_id": {"$nin": hidden_ids}}).sort('_id', -1))
+    
     html = ADMIN_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <h2 class="fw-bold border-start border-primary border-4 ps-2 mb-4">লিস্ট ও ডিলেট ম্যানেজমেন্ট (Global)</h2>
     <div class="card p-4 shadow">
@@ -2089,6 +2146,7 @@ def all_movies():
                         <td>{{ m.views | default(0) }}</td>
                         <td>
                             <a href="/admin/edit_movie/{{ m._id }}" class="btn btn-sm btn-primary"><i class="fas fa-edit"></i> Edit</a>
+                            <a href="/admin/send_tg/{{ m._id }}" class="btn btn-sm btn-info" title="Send to Telegram"><i class="fab fa-telegram"></i></a>
                             <a href="/admin/delete_movie/{{ m._id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure?')"><i class="fas fa-trash"></i></a>
                         </td>
                     </tr>
@@ -2110,7 +2168,7 @@ def all_movies():
         function deleteSelected() {
             let selected = [];
             document.querySelectorAll('.movie-checkbox:checked').forEach(cb => selected.push(cb.value));
-            if(selected.length > 0 && confirm("নির্বাচিত মুভিগুলো ডিলেট করতে চান?")) {
+            if(selected.length > 0 && confirm("নির্বাচিত মুভিগুলো ডিলেট/হাইড করতে চান?")) {
                 fetch('/admin/delete_multiple', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ids: selected}) })
                 .then(() => window.location.reload());
             } else if (selected.length === 0) { alert("কোনো মুভি সিলেক্ট করা হয়নি!"); }
@@ -2122,17 +2180,28 @@ def all_movies():
 @app.route('/admin/delete_movie/<id>')
 @login_required
 def delete_movie(id):
+    tenant = get_tenant()
     clear_cache()
-    movies_col.delete_one({"_id": ObjectId(id)})
+    if tenant.get('is_main'):
+        movies_col.delete_one({"_id": ObjectId(id)})
+    else:
+        # 🚀 Soft Delete for Sub Admins
+        domains_col.update_one({"_id": tenant['_id']}, {"$addToSet": {"hidden_movies": str(id)}})
+    flash("মুভিটি সফলভাবে ডিলেট করা হয়েছে!")
     return redirect(url_for('all_movies'))
 
 @app.route('/admin/delete_multiple', methods=['POST'])
 @login_required
 def delete_multiple():
+    tenant = get_tenant()
     clear_cache()
     data = request.json
-    ids = [ObjectId(i) for i in data.get('ids', [])]
-    movies_col.delete_many({"_id": {"$in": ids}})
+    if tenant.get('is_main'):
+        ids = [ObjectId(i) for i in data.get('ids', [])]
+        movies_col.delete_many({"_id": {"$in": ids}})
+    else:
+        # 🚀 Soft Delete for Sub Admins
+        domains_col.update_one({"_id": tenant['_id']}, {"$addToSet": {"hidden_movies": {"$each": data.get('ids', [])}}})
     return jsonify({"status": "success"})
 
 if __name__ == '__main__':
