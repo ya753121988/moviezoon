@@ -30,6 +30,8 @@ try:
     movies_col.create_index([("type", 1), ("_id", -1)])
     movies_col.create_index([("categories", 1), ("_id", -1)])
     movies_col.create_index([("views", -1)])
+    movies_col.create_index([("tmdb_id", 1)])
+    movies_col.create_index([("tmdb_rating", -1)])
     movies_col.create_index([("title", "text")])
     domains_col.create_index([("host", 1)])
 except Exception as e:
@@ -110,6 +112,7 @@ def send_tg_alert(tenant, movie_id):
     if movie.get('language'): caption += f"🌍 Language: {movie['language']}\n"
     if movie.get('quality'): caption += f"📺 Quality: {movie['quality']}\n"
     if movie.get('type'): caption += f"🏷️ Type: {movie['type']}\n"
+    if movie.get('tmdb_rating'): caption += f"⭐ Rating: {movie['tmdb_rating']}\n"
     
     site_url = tg.get('site_url', f"https://{tenant['host']}").rstrip('/')
     caption += f"\n🔗 *Watch/Download Links:*\n👉 {site_url}/movie/{movie_id}\n"
@@ -131,7 +134,7 @@ def send_tg_alert(tenant, movie_id):
 # High Traffic In-Memory Cache System
 # ==========================================
 CACHE_STORE = {}
-CACHE_TIMEOUT = 120 
+CACHE_TIMEOUT = 60 # 🚀 Reduced to 60s for TMDB Live Minute Updates
 
 def get_cached_data(key, host):
     full_key = f"{host}_{key}"
@@ -225,7 +228,8 @@ FRONTEND_HTML = """
         .movie-poster { width: 100%; height: 100%; object-fit: cover; }
         
         .movie-badge { position: absolute; top: 8px; right: 8px; background: #e50914; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
-        .movie-quality { position: absolute; top: 8px; left: 8px; background: #007bff; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
+        .movie-rating { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.8); color: #ffc107; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; border: 1px solid #ffc107; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
+        .movie-quality { position: absolute; top: 35px; left: 8px; background: #007bff; color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; font-weight: bold; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.5);}
         .movie-views { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.85); color: #fff; padding: 3px 8px; font-size: 11px; border-radius: 4px; z-index: 2; border: 1px solid #333; }
         
         .movie-info { padding: 10px 8px; text-align: center; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; background: #1e2738; }
@@ -585,6 +589,9 @@ def home():
 
     categories = list(options_col.find({"type": "category"}))
     
+    # 🚀 Top TMDB Rated Movies List (Bottom Section)
+    top_rated = list(movies_col.find({"tmdb_rating": {"$exists": True}, "_id": {"$nin": hidden_ids}}).sort('tmdb_rating', -1).limit(12))
+    
     promo_html = """
     {% if promos %}
     <div class="row my-4">
@@ -649,7 +656,8 @@ def home():
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                    {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
+                    {% if m.tmdb_rating %}<span class="movie-rating"><i class="fas fa-star"></i> {{ m.tmdb_rating }}</span>{% endif %}
+                    {% if m.quality %}<span class="movie-quality" {% if not m.tmdb_rating %}style="top: 8px;"{% endif %}>{{ m.quality }}</span>{% endif %}
                     <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
@@ -678,7 +686,8 @@ def home():
             <div class="movie-card" style="border-color: #198754;">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                    <span class="movie-quality bg-success">Episodes Added</span>
+                    {% if m.tmdb_rating %}<span class="movie-rating"><i class="fas fa-star"></i> {{ m.tmdb_rating }}</span>{% endif %}
+                    <span class="movie-quality bg-success" {% if not m.tmdb_rating %}style="top: 8px;"{% endif %}>Episodes Added</span>
                     <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
@@ -739,6 +748,7 @@ def home():
             <div class="movie-card" style="border-color: #dc3545;">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                    {% if m.tmdb_rating %}<span class="movie-rating"><i class="fas fa-star"></i> {{ m.tmdb_rating }}</span>{% endif %}
                     <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
@@ -765,6 +775,7 @@ def home():
                 <div class="movie-card" style="border-color: #ffc107;">
                     <div class="poster-wrapper">
                         {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
+                        {% if m.tmdb_rating %}<span class="movie-rating"><i class="fas fa-star"></i> {{ m.tmdb_rating }}</span>{% endif %}
                         <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
                         <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                     </div>
@@ -780,12 +791,34 @@ def home():
         {% endif %}
     {% endfor %}
     
+    {% if top_rated %}
+    <div class="d-flex justify-content-between align-items-center mt-5 mb-3 border-start border-warning border-4 ps-3">
+        <h3 class="fw-bold text-uppercase m-0 text-warning">Top TMDB Rated Movies & Series</h3>
+    </div>
+    <div class="row bg-dark p-3 rounded border border-secondary shadow-sm mb-4">
+        {% for m in top_rated %}
+        <div class="col-12 col-sm-6 col-md-4 col-lg-3 mb-3">
+            <a href="/movie/{{ m._id }}" class="text-decoration-none d-flex align-items-center bg-black p-2 rounded border border-secondary" onclick="handleMovieClick(event, this.href)" style="transition: 0.3s;">
+                <img src="{{ m.poster }}" alt="Poster" style="width: 50px; height: 75px; object-fit: cover;" class="rounded me-3" onerror="this.src='https://via.placeholder.com/50x75?text=N/A'">
+                <div class="flex-grow-1" style="overflow: hidden;">
+                    <h6 class="text-white mb-1 fw-bold text-truncate" style="font-size: 14px;">{{ m.title }}</h6>
+                    <span class="badge bg-secondary" style="font-size: 10px;">{{ m.type }}</span>
+                </div>
+                <div class="text-end ms-2">
+                    <h5 class="text-warning fw-bold m-0"><i class="fas fa-star"></i> {{ m.tmdb_rating }}</h5>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if not sections and not latest_episodes %}
         <div class="alert alert-secondary text-center mt-5 fs-4">কোনো পোস্ট পাওয়া যায়নি!</div>
     {% endif %}
     """)
     
-    rendered_html = render_frontend(html, page_name='home', top_slider=top_slider, sections=sections, latest_episodes=latest_episodes, other_types=other_types, categories=categories, promos=promos)
+    rendered_html = render_frontend(html, page_name='home', top_slider=top_slider, sections=sections, latest_episodes=latest_episodes, other_types=other_types, categories=categories, promos=promos, top_rated=top_rated)
     set_cached_data('home_page', host, rendered_html)
     return rendered_html
 
@@ -808,7 +841,8 @@ def search():
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                    {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
+                    {% if m.tmdb_rating %}<span class="movie-rating"><i class="fas fa-star"></i> {{ m.tmdb_rating }}</span>{% endif %}
+                    {% if m.quality %}<span class="movie-quality" {% if not m.tmdb_rating %}style="top: 8px;"{% endif %}>{{ m.quality }}</span>{% endif %}
                     <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
@@ -866,7 +900,8 @@ def category_filter(cat_name):
             <div class="movie-card">
                 <div class="poster-wrapper">
                     {% if m.badge %}<span class="movie-badge">{{ m.badge }}</span>{% endif %}
-                    {% if m.quality %}<span class="movie-quality">{{ m.quality }}</span>{% endif %}
+                    {% if m.tmdb_rating %}<span class="movie-rating"><i class="fas fa-star"></i> {{ m.tmdb_rating }}</span>{% endif %}
+                    {% if m.quality %}<span class="movie-quality" {% if not m.tmdb_rating %}style="top: 8px;"{% endif %}>{{ m.quality }}</span>{% endif %}
                     <span class="movie-views"><i class="fas fa-eye"></i> {{ m.views | default(0) }}</span>
                     <img src="{{ m.poster }}" alt="{{ m.title }}" class="movie-poster" onerror="this.src='https://via.placeholder.com/300x450?text=No+Poster'">
                 </div>
@@ -908,6 +943,24 @@ def movie_details(id):
     movie = movies_col.find_one({"_id": ObjectId(id)})
     if not movie: return "Not Found", 404
     
+    # 🚀 Update TMDB Rating live per minute logic
+    if movie.get('tmdb_id') and time.time() - movie.get('last_rating_update', 0) > 60:
+        api_key = tenant.get('settings', {}).get('tmdb_api_key')
+        if not api_key:
+            main_tenant = domains_col.find_one({"is_main": True})
+            api_key = main_tenant.get('settings', {}).get('tmdb_api_key') if main_tenant else None
+        
+        if api_key:
+            m_type = 'tv' if movie.get('type') in ['Series', 'Drama', 'Anime'] else 'movie'
+            try:
+                res = requests.get(f"https://api.themoviedb.org/3/{m_type}/{movie['tmdb_id']}?api_key={api_key}", timeout=3).json()
+                if 'vote_average' in res:
+                    new_rating = round(res.get('vote_average', 0), 1)
+                    movies_col.update_one({"_id": ObjectId(id)}, {"$set": {"tmdb_rating": new_rating, "last_rating_update": time.time()}})
+                    movie['tmdb_rating'] = new_rating
+            except:
+                pass
+
     html = FRONTEND_HTML.replace('<!-- CONTENT_BLOCK -->', """
     <div class="row mt-3">
         <div class="col-12 mb-3">
@@ -920,6 +973,7 @@ def movie_details(id):
             <h1 class="fw-bold text-white mb-3 mt-2" style="text-shadow: 1px 1px 3px #000;">{{ m.title }}</h1>
             <div class="d-flex flex-wrap gap-2 mb-3">
                 <span class="badge bg-danger fs-6 shadow-sm px-3 py-2"><i class="fas fa-video"></i> {{ m.type }}</span>
+                {% if m.tmdb_rating %}<span class="badge bg-dark border border-warning text-warning fs-6 shadow-sm px-3 py-2"><i class="fas fa-star"></i> TMDB: {{ m.tmdb_rating }}</span>{% endif %}
                 {% if m.date %}<span class="badge bg-info text-dark fs-6 shadow-sm px-3 py-2"><i class="far fa-calendar-alt"></i> {{ m.date[:4] }}</span>{% endif %}
                 {% if m.quality %}<span class="badge bg-primary fs-6 shadow-sm px-3 py-2">{{ m.quality }}</span>{% endif %}
                 {% if m.language %}<span class="badge bg-success fs-6 shadow-sm px-3 py-2"><i class="fas fa-language"></i> {{ m.language }}</span>{% endif %}
@@ -1280,7 +1334,7 @@ def manage_domains():
             </table>
         </div>
         {% if dns_info.api_success %}
-        <div class="alert alert-success p-2 mt-2"><i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে না। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!</div>
+        <div class="alert alert-success p-2 mt-2"><i class="fas fa-check-circle"></i> <b>অভিনন্দন:</b> {{ dns_info.api_status }} আপনাকে আর Vercel-এ ঢুকতে হবে নিরাপদ। ক্লায়েন্ট DNS বসালেই সাইট লাইভ!</div>
         {% else %}
         <div class="alert alert-danger p-2 mt-2"><i class="fas fa-exclamation-triangle"></i> <b>API Failed:</b> {{ dns_info.api_status }}<br><i>(আপনাকে হয়তো ডোমেইনটি ম্যানুয়ালি Vercel Dashboard-এ গিয়ে Settings > Domains থেকে Add করতে হবে।)</i></div>
         {% endif %}
@@ -1481,6 +1535,7 @@ def admin_settings():
             "promos": promos
         }
         
+        # 🚀 SUBDOMAIN PASSWORD SYNC LOGIC
         new_user = request.form.get('admin_user')
         new_pass = request.form.get('admin_pass')
         
@@ -1611,8 +1666,8 @@ def admin_settings():
 
         <h5 class="text-warning border-bottom border-secondary pb-2"><i class="fas fa-shield-alt"></i> Security / API</h5>
         <div class="row mb-4">
-            <div class="col-md-4 mb-2"><label>Admin Username</label><input type="text" name="admin_user" class="form-control" value="{{ admin_user }}" required></div>
-            <div class="col-md-4 mb-2"><label>Admin Password</label><input type="text" name="admin_pass" class="form-control" value="{{ admin_pass }}" required></div>
+            <div class="col-md-4 mb-2"><label>Admin Username (Syncs globally)</label><input type="text" name="admin_user" class="form-control" value="{{ admin_user }}" required></div>
+            <div class="col-md-4 mb-2"><label>Admin Password (Syncs globally)</label><input type="text" name="admin_pass" class="form-control" value="{{ admin_pass }}" required></div>
             <div class="col-md-4 mb-2"><label>TMDB API Key V3</label><input type="text" name="tmdb_api_key" class="form-control" value="{{ s.get('tmdb_api_key', '') }}" placeholder="Required for TMDB Import"></div>
         </div>
 
@@ -1798,6 +1853,20 @@ def add_movie():
             elif tmdb_match:
                 m_type = tmdb_match.group(1)
                 tmdb_input = tmdb_match.group(2)
+                
+            tmdb_input = str(tmdb_input)
+
+            # 🚀 CHECK DUPLICATE BEFORE FETCHING EVERYTHING
+            existing_movie = movies_col.find_one({"tmdb_id": tmdb_input})
+            if existing_movie:
+                if str(existing_movie['_id']) in tenant.get('hidden_movies', []):
+                    domains_col.update_one({"_id": tenant['_id']}, {"$pull": {"hidden_movies": str(existing_movie['_id'])}})
+                    clear_cache()
+                    flash("এই মুভিটি আপনি আগে ডিলেট করেছিলেন, এখন মেইন ডোমেন থেকে অটো রিস্টোর করা হয়েছে!")
+                    return redirect(f"/admin/edit_movie/{existing_movie['_id']}")
+                else:
+                    flash("এই মুভিটি ইতিমধ্যে সাইটে এড করা আছে! এক মুভি দুইবার এড করা যাবে না।")
+                    return redirect(f"/admin/edit_movie/{existing_movie['_id']}")
             
             url = f"https://api.themoviedb.org/3/{m_type}/{tmdb_input}?api_key={api_key}&language=en-US"
             try:
@@ -1813,6 +1882,7 @@ def add_movie():
                 backdrop = f"https://image.tmdb.org/t/p/w780{res.get('backdrop_path')}" if res.get('backdrop_path') else poster
                 
                 desc = res.get('overview', '')
+                tmdb_rating = round(res.get('vote_average', 0), 1)
                 
                 genres = [g['name'] for g in res.get('genres', [])]
                 for g in genres:
@@ -1821,6 +1891,7 @@ def add_movie():
                 
                 new_doc = {
                     "title": title, "type": "Movie" if m_type == 'movie' else "Series",
+                    "tmdb_id": tmdb_input, "tmdb_rating": tmdb_rating, "last_rating_update": time.time(),
                     "poster": poster, "backdrop": backdrop, "description": desc, "date": date,
                     "badge": "", "quality": "", "language": "English",
                     "categories": genres, "views": 0, "links": []
